@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Local Scheduler</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+</head>
+<body>
+  <!-- Top bar -->
+  <header class="topbar">
+    
+    <div class="left">
+      <button id="choose-folder">📁 Choose data folder</button>
+      <button id="new-day-file">➕ Today file</button>
+    </div>
+    <button id="view-day">Day</button>
+    <button id="view-week">Week</button>
+    <button id="prev-week">Prev week</button>
+    <button id="next-week">Next week</button>
+    <div class="center" id="month-nav">
+      <button id="prev-month">◀</button>
+      <span id="month-label"></span>
+      <button id="next-month">▶</button>
+    </div>
+    <div class="right">
+      <button id="export-zip">⬇ Export all</button>
+      <label class="import-label">
+        ⬆ Import zip
+        <input type="file" id="import-zip" accept=".zip" hidden />
+      </label>
+      <button id="help-btn">❓ Help</button>
+      <button id="theme-toggle">🌙 Dark/Light</button>
+      <button id="settings-btn">⚙️</button>
+    </div>
+    
+  </header>
+
+  <!-- Main app layout with draggable dividers -->
+  <main class="app">
+    <div class="pane" id="calendar-pane">
+      <aside id="calendar"></aside>
+    </div>
+    <div class="divider" id="divider-1"></div>
+    <div class="pane" id="day-pane">
+      <section id="day-view" class="hidden">
+        <div class="day-header">
+          <h2 id="day-title"></h2>
+          <div class="day-actions">
+            <button id="add-activity">+ Add activity</button>
+            <button id="save-day">💾 Save</button>
+          </div>
+        </div>
+        <div id="activities"></div>
+      </section>
+      <div id="week-view" class="hidden"></div>
+    </div>
+    <div class="divider" id="divider-2"></div>
+    <div class="pane" id="recurring-pane">
+      <section id="recurring-view">
+        <h3>Recurring events</h3>
+        <div id="recurring-list"></div>
+        <button id="add-recurring">+ Add recurring</button>
+      </section>
+    </div>
+  </main>
+
+  <!-- Activity template -->
+  <template id="activity-template">
+    <div class="activity-card">
+      <div class="activity-header">
+        <div class="activity-title"></div>
+        <div class="activity-actions">
+          <button class="edit-activity">✎ Edit</button>
+          <button class="delete-activity">🗑 Delete</button>
+        </div>
+      </div>
+      <ul class="checklist"></ul>
+      <div class="item-actions">
+        <button class="add-item">+ Add item</button>
+      </div>
+    </div>
+  </template>
+
+  <!-- Help overlay -->
+  <div id="help-overlay" class="modal">
+    <div class="modal-card">
+      <h2>📖 How to Use the Local Scheduler</h2>
+      <h3>📌 Adding an Activity</h3>
+      <ul>
+        <li>Click a day in the calendar.</li>
+        <li>Click <strong>+ Add activity</strong> in Day View.</li>
+        <li>Enter title, optional time, and checklist items.</li>
+        <li>Click <strong>Save Day</strong>.</li>
+      </ul>
+      <h3>🔁 Adding a Recurring Activity</h3>
+      <ul>
+        <li>Click <strong>+ Add recurring</strong> in Recurring Events panel.</li>
+        <li>Fill in title, time, type, interval, day of week/month, and checklist.</li>
+        <li>Click <strong>Save</strong>. Stored in <code>recurring.json</code>.</li>
+      </ul>
+      <h3>🎨 Updating the Background</h3>
+      <ul>
+        <li>Place <code>background.jpg</code> or <code>.png</code> in the root of your chosen data folder.</li>
+        <li>When you choose the folder, the background is applied automatically.</li>
+      </ul>
+      <h3>📦 Import & Export</h3>
+      <p><strong>Export:</strong> Click ⬇ Export all → downloads <code>scheduler_backup.zip</code>.</p>
+      <p><strong>Import:</strong> Click ⬆ Import zip → restores files preserving folder structure.</p>
+      <div class="modal-actions"><button id="help-close">Close</button></div>
+    </div>
+  </div>
+  <!-- Settings overlay -->
+   <div id="settings-overlay" class="modal">
+    <div class="modal-card">
+      <h2>Reminder Settings</h2>
+      <label>
+        <p>Reminder lead time (minutes)</p>
+        <input id="reminder-lead" type="number" min="1" max="120" value="15" />
+      </label>
+      <button id="notify-permission">Enable notifications</button>
+      <button id="settings-close">Close</button>
+    </div>
+  </div>
+
+
+
+  <!-- Recurring modal -->
+  <div id="recurring-modal" class="modal">
+    <div class="modal-card">
+      <h3 id="recurring-modal-title">Add recurring event</h3>
+      <label class="label">Title <input type="text" id="rec-title" /></label>
+      <label class="label">Time <input type="time" id="rec-time" /></label>
+      <label class="label">Type
+        <select id="rec-type">
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+      </label>
+      <label class="label">Interval <input type="number" id="rec-interval" min="1" value="1" /></label>
+      <label class="label">Day of week <input type="number" id="rec-dow" min="0" max="6" /></label>
+      <label class="label">Day of month <input type="number" id="rec-dom" min="1" max="31" /></label>
+      <label class="label">Checklist items <input type="text" id="rec-items" /></label>
+      <div class="modal-actions">
+        <button id="rec-save">Save</button>
+        <button id="rec-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- App logic -->
+  <script src="app.js"></script>
+</body>
+</html>

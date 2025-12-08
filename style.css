@@ -1,0 +1,284 @@
+:root {
+  --bg: #0f172a;
+  --panel: #111827;
+  --border: #1f2937;
+  --text: #e5e7eb;
+  --muted: #9ca3af;
+  --accent: #22c55e;
+  --accent-2: #3b82f6;
+}
+
+/* Light mode overrides */
+body.light-mode {
+  --bg: #f9fafb;
+  --panel: #ffffff;
+  --border: #d1d5db;
+  --text: #111827;
+  --muted: #6b7280;
+  --accent: #16a34a;
+  --accent-2: #2563eb;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+  background-attachment: fixed;
+}
+
+/* Top bar and buttons */
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+.topbar .left, .topbar .right, .topbar .center {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.topbar button, .topbar .import-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  font-size: 0.95rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.topbar button:hover, .topbar .import-label:hover {
+  border-color: var(--muted);
+  background: rgba(255,255,255,0.05);
+}
+.import-label input { display: none; }
+
+/* Layout with draggable dividers */
+.app {
+  display: flex;
+  height: calc(100vh - 58px);
+  overflow: hidden;
+}
+
+#calendar-pane {
+  flex: 0 0 25%;   /* fixed width for calendar */
+  border-right: 1px solid var(--border);
+}
+
+#day-pane {
+  flex: 0 0 45%;   /* fixed width for day view */
+  border-right: 1px solid var(--border);
+}
+
+#recurring-pane {
+  flex: 0 0 30%;   /* fixed width for recurring view */
+}
+
+.divider { display: none; } /* remove divider visuals */
+
+/* Responsive stacking on smaller screens */
+@media (max-width: 1000px) {
+  .app { flex-direction: column; height: auto; }
+  .pane { border: none; border-bottom: 1px solid var(--border); }
+  .divider { height: 6px; width: 100%; cursor: row-resize; }
+}
+
+/* Calendar */
+#calendar { padding: 1rem; }
+.calendar-header {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.calendar-weekday { text-align: center; }
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+.calendar-day {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  text-align: center;
+  cursor: pointer;
+  background: var(--panel);
+  color: var(--text);
+  transition: background 0.2s, transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+.calendar-day:hover {
+  background: var(--accent-2);
+  color: #fff;
+  transform: scale(1.03);
+  border-color: var(--accent-2);
+}
+body.light-mode .calendar-day {
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+
+/* Day view */
+#day-view { padding: 1rem; }
+.hidden { display: none; }
+.day-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+.day-actions { display: flex; gap: 0.5rem; }
+
+/* Activity cards */
+.activity-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+  background: var(--panel);
+}
+.activity-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.activity-title { font-weight: 600; }
+.activity-actions { display: flex; gap: 0.4rem; }
+
+.checklist {
+  list-style: none;
+  padding-left: 0;
+  margin: 0.5rem 0 0.75rem;
+}
+.checklist li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+}
+.checklist input[type="checkbox"] {
+  width: 18px; height: 18px;
+  accent-color: var(--accent);
+}
+.item-actions { display: flex; gap: 0.4rem; }
+
+/* Inputs */
+input[type="text"], input[type="time"], input[type="number"], select {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+}
+.label { display: block; margin: 0.35rem 0; }
+
+/* Modals and overlay */
+.modal {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 6, 23, 0.7);
+  backdrop-filter: blur(6px);
+  z-index: 1000;
+}
+.modal.active { display: flex; }
+.modal-card {
+  width: 640px;
+  max-width: 92vw;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 1.5rem;
+  color: var(--text);
+  overflow-y: auto;
+  max-height: 80vh;
+}
+.modal-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+.modal-card h2 { margin-top: 0; color: var(--accent-2); }
+.modal-card h3 { margin-top: 1rem; color: var(--accent); }
+
+/* Recurring panel */
+#recurring-view { padding: 1rem; }
+#recurring-view h3 { margin-top: 0; }
+.recurring-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem;
+  margin-bottom: 0.5rem;
+  background: var(--panel);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.recurring-actions { display: flex; gap: 0.4rem; }
+
+#week-view {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+  height: calc(100vh - 58px);
+  overflow: auto;
+}
+.week-day {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+}
+.week-day h4 {
+  margin: 0 0 6px;
+  font-size: 0.95rem;
+}
+.week-item {
+  font-size: 0.9rem;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: var(--surface);
+  margin-bottom: 4px;
+}
+#settings {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+}
+#reminder-lead {
+  width: 72px;
+}
+
+#settings-overlay {
+justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+#settings-overlay.active {
+  display: flex;
+}
