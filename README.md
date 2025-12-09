@@ -20,10 +20,10 @@ A privacy‑first, offline calendar and task manager that stores your data direc
 
 ## 📸 Screenshot
 - Dark Mode
-![Local Scheduler Screenshot Dark Mode](Screenshot.png)
+
 
 - Light Mode
-![Local Scheduler Screenshot Light Mode](Screenshot-light.png)
+
 
 ## 🛡️ Privacy
 All data is stored locally on your device. Nothing is uploaded or shared.
