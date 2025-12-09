@@ -146,19 +146,44 @@ body.light-mode .calendar-day {
 .day-actions { display: flex; gap: 0.5rem; }
 
 /* Activity cards */
-.activity-card {
+.activity {
+  background: var(--card-bg);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 0.75rem;
-  margin-bottom: 0.75rem;
-  background: var(--panel);
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+  color: var(--text);
 }
+
+
 .activity-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  margin-bottom: 8px;
+  color: var(--text);
 }
-.activity-title { font-weight: 600; }
+
+.activity-time {
+  color: var(--accent, #0078d4);
+  font-family: monospace;
+  font-weight: bold;
+  color: var(--text);
+}
+
+.activity-title {
+  flex: 1;
+  margin-left: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.recurring-label {
+  font-size: 0.85em;
+  color: #666;
+  font-style: italic;
+}
 .activity-actions { display: flex; gap: 0.4rem; }
 
 .checklist {
@@ -281,4 +306,143 @@ justify-content: center;
 
 #settings-overlay.active {
   display: flex;
+}
+#status-bar {
+  position: fixed;
+  bottom: 8px;
+  right: 12px;
+  font-size: 0.9em;
+  color: var(--text);
+  opacity: 0;
+  transition: opacity 0.5s ease-in-out;
+}
+
+.overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  justify-content: center;
+  align-items: center;
+  animation: fadeIn 0.3s ease forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.activity-updated {
+  animation: highlight 1s ease;
+}
+
+@keyframes highlight {
+  from { background-color: rgba(34, 197, 94, 0.3); } /* soft yellow */
+  to   { background-color: transparent; }
+}
+
+.activity-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: bold;
+}
+
+.activity-time {
+  color: var(--accent);
+  font-family: monospace;
+}
+
+.recurring-label {
+  margin-left: auto;
+  font-size: 0.85em;
+  color: #666;
+  font-style: italic;
+}
+
+.activity ul li button {
+  margin-left: 8px;
+  font-size: 0.8em;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.activity ul li button:hover {
+  color: var(--accent);
+}
+
+.calendar-day.selected-day {
+  background-color: var(--accent, #22c55e);
+  color: #fff;
+  font-weight: bold;
+  border-radius: 6px;
+}
+
+.calendar-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.calendar-title {
+  font-weight: bold;
+  font-size: 1.2em;
+}
+
+.calendar-nav {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 1.2em;
+  color: var(--text, #111);
+}
+
+.calendar-nav:hover {
+  color: var(--accent, #22c55e);
+}
+
+.header-title {
+  flex-grow: 1;
+  text-align: center;
+  line-height: 1.2;
+  padding: 4px 0;
+}
+
+.main-title {
+  font-size: 1.4em;
+  font-weight: bold;
+  color: var(--accent, #22c55e);
+}
+
+.subtitle {
+  font-size: 0.9em;
+  color: var(--muted, #aaa);
+  font-style: italic;
+}
+
+#header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: var(--header-bg, #111);
+}
+
+#today-btn {
+  margin-left: 8px;
+  padding: 6px 12px;
+  font-size: 0.9em;
+  background: var(--accent, #22c55e);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#today-btn:hover {
+  background: var(--accent-hover, #16a34a);
 }

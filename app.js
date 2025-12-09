@@ -13,7 +13,6 @@ const activitiesEl = document.getElementById("activities");
 const addActivityBtn = document.getElementById("add-activity");
 const saveDayBtn = document.getElementById("save-day");
 const chooseFolderBtn = document.getElementById("choose-folder");
-const newDayFileBtn = document.getElementById("new-day-file");
 const prevMonthBtn = document.getElementById("prev-month");
 const nextMonthBtn = document.getElementById("next-month");
 const monthLabelEl = document.getElementById("month-label");
@@ -39,10 +38,7 @@ const recCancel = document.getElementById("rec-cancel");
 
 const activityTemplate = document.getElementById("activity-template");
 const weekViewEl = document.getElementById("week-view");
-const viewDayBtn = document.getElementById("view-day");
-const viewWeekBtn = document.getElementById("view-week");
-const prevWeekBtn = document.getElementById("prev-week");
-const nextWeekBtn = document.getElementById("next-week");
+
 
 
 const settingsBtn = document.getElementById("settings-btn");
@@ -50,12 +46,12 @@ const settingsOverlay = document.getElementById("settings-overlay");
 const settingsClose = document.getElementById("settings-close");
 const reminderLeadInput = document.getElementById("reminder-lead");
 const notifyPermissionBtn = document.getElementById("notify-permission");
-
+const todayBtn = document.getElementById("today-btn");
 
 
 // ----- State -----
 let dataDirHandle = null;
-let currentDate = null;
+let currentDate = new Date();
 let currentActivities = []; // only file contents; recurring overlay is separate
 let currentFileHandle = null;
 
@@ -65,6 +61,8 @@ let editingRecurringIndex = null;
 const today = new Date();
 let currentMonth = today.getMonth();
 let currentYear = today.getFullYear();
+
+
 
 // ----- Theme persistence -----
 (function initTheme() {
@@ -135,6 +133,15 @@ async function loadHandle(key) {
     req.onerror = () => reject(req.error);
   });
 }
+
+// ----- Today button -----
+todayBtn.onclick = () => {
+  const now = new Date();
+  currentDate = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // strip time
+  openDay(currentDate); // re-render day view
+  renderCalendar(currentDate.getFullYear(), currentDate.getMonth()); // update calendar highlight
+};
+
 
 // ----- Init folder (restore without prompting) -----
 async function initFolder() {
@@ -275,6 +282,34 @@ async function writeDayFile(handle, activities) {
   await writable.close();
 }
 
+
+// ----- Auto-save helper with debounce -----
+let saveTimeout; // holds the timer ID
+
+function showSaveStatus() {
+  const status = document.getElementById("save-status");
+  const bar = document.getElementById("status-bar");
+  const now = new Date().toLocaleTimeString();
+  status.textContent = `💾 Saved at ${now}`;
+  bar.style.opacity = "1";
+  setTimeout(() => bar.style.opacity = "0", 2000); // fade out after 2s
+}
+
+
+async function autoSaveDay() {
+  if (!currentFileHandle) return;
+  clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(async () => {
+    try {
+      await writeDayFile(currentFileHandle, currentActivities);
+      showSaveStatus(); 
+    } catch (err) {
+      console.error("Auto-save failed:", err);
+    }
+  }, 500);
+}
+
+
 // ----- Recurring storage -----
 async function loadRecurring() {
   if (!dataDirHandle) { recurringEvents = []; return; }
@@ -354,6 +389,39 @@ function scheduleRemindersForDate(date) {
 function renderCalendar(year, month) {
   calendarEl.innerHTML = "";
 
+  // Top bar: month/year + navigation buttons
+  const topBar = document.createElement("div");
+  topBar.className = "calendar-topbar";
+
+  const prevBtn = document.createElement("button");
+  prevBtn.className = "calendar-nav prev";
+  prevBtn.textContent = "◀";
+  prevBtn.onclick = () => {
+    currentMonth--;
+    if (currentMonth < 0) { currentMonth = 11; currentYear--; }
+    renderCalendar(currentYear, currentMonth);
+  };
+
+  const nextBtn = document.createElement("button");
+  nextBtn.className = "calendar-nav next";
+  nextBtn.textContent = "▶";
+  nextBtn.onclick = () => {
+    currentMonth++;
+    if (currentMonth > 11) { currentMonth = 0; currentYear++; }
+    renderCalendar(currentYear, currentMonth);
+  };
+
+  const title = document.createElement("div");
+  title.className = "calendar-title";
+  title.textContent = new Date(year, month, 1)
+    .toLocaleString("default", { month: "long", year: "numeric" });
+
+  topBar.appendChild(prevBtn);
+  topBar.appendChild(title);
+  topBar.appendChild(nextBtn);
+  calendarEl.appendChild(topBar);
+
+  // Weekday header row
   const header = document.createElement("div");
   header.className = "calendar-header";
   const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -365,6 +433,7 @@ function renderCalendar(year, month) {
   }
   calendarEl.appendChild(header);
 
+  // Grid container
   const grid = document.createElement("div");
   grid.className = "calendar-grid";
 
@@ -372,33 +441,42 @@ function renderCalendar(year, month) {
   const startOffset = ((firstOfMonth.getDay() + 6) % 7); // Monday=0
   const daysInMonth = new Date(year, month + 1, 0).getDate();
 
+  // Empty cells before the 1st
   for (let i = 0; i < startOffset; i++) {
-    grid.appendChild(document.createElement("div"));
+    const empty = document.createElement("div");
+    empty.className = "calendar-day empty";
+    grid.appendChild(empty);
   }
 
+  // Actual days
   for (let d = 1; d <= daysInMonth; d++) {
+    const date = new Date(year, month, d);
     const dayEl = document.createElement("div");
     dayEl.className = "calendar-day";
     dayEl.textContent = d;
-    dayEl.onclick = () => openDay(new Date(year, month, d));
+
+    // Highlight the currently selected day
+    if (
+      currentDate &&
+      date.getDate() === currentDate.getDate() &&
+      date.getMonth() === currentDate.getMonth() &&
+      date.getFullYear() === currentDate.getFullYear()
+    ) {
+      dayEl.classList.add("selected-day");
+    }
+
+    dayEl.onclick = () => {
+      currentDate = date;
+      openDay(date); // show day view
+      renderCalendar(year, month); // refresh highlight
+    };
+
     grid.appendChild(dayEl);
   }
 
   calendarEl.appendChild(grid);
-
-  monthLabelEl.textContent = new Date(year, month, 1)
-    .toLocaleString("default", { month: "long", year: "numeric" });
 }
-prevMonthBtn.onclick = () => {
-  currentMonth--;
-  if (currentMonth < 0) { currentMonth = 11; currentYear--; }
-  renderCalendar(currentYear, currentMonth);
-};
-nextMonthBtn.onclick = () => {
-  currentMonth++;
-  if (currentMonth > 11) { currentMonth = 0; currentYear++; }
-  renderCalendar(currentYear, currentMonth);
-};
+
 
 function showDayView() {
   dayViewEl.classList.remove("hidden");
@@ -421,23 +499,9 @@ function getWeekStart(date) {
 
 let currentWeekStart = null;
 
-viewDayBtn.onclick = showDayView;
-viewWeekBtn.onclick = async () => {
-  currentWeekStart = getWeekStart(currentDate || new Date());
-  await renderWeekView(currentWeekStart);
-  showWeekView();
-};
 
-prevWeekBtn.onclick = async () => {
-  if (!currentWeekStart) currentWeekStart = getWeekStart(currentDate || new Date());
-  currentWeekStart.setDate(currentWeekStart.getDate() - 7);
-  await renderWeekView(currentWeekStart);
-};
-nextWeekBtn.onclick = async () => {
-  if (!currentWeekStart) currentWeekStart = getWeekStart(currentDate || new Date());
-  currentWeekStart.setDate(currentWeekStart.getDate() + 7);
-  await renderWeekView(currentWeekStart);
-};
+
+
 
 // ----- Day view (overlay recurring only for display) -----
 async function openDay(date) {
@@ -521,7 +585,8 @@ function buildDisplayActivities() {
         display.push({
           title: ev.title,
           time: ev.time,
-          items: (ev.items || []).map(t => ({ text: t, done: false }))
+          items: (ev.items || []).map(t => ({ text: t, done: false })),
+          isRecurring: true 
         });
       }
     });
@@ -530,83 +595,120 @@ function buildDisplayActivities() {
 }
 
 // ----- Activities rendering -----
-function renderActivities(list) {
-  activitiesEl.innerHTML = "";
+function renderActivities(displayActivities) {
+  const container = document.getElementById("activities");
+  container.innerHTML = "";
 
-  const sorted = [...list].sort((a, b) => {
-    if (!a.time && !b.time) return 0;
-    if (!a.time) return 1;
-    if (!b.time) return -1;
-    return a.time.localeCompare(b.time);
-  });
+  displayActivities.forEach((act, idx) => {
+    const activityDiv = document.createElement("div");
+    activityDiv.className = "activity";
 
-  for (const a of sorted) {
-    const node = activityTemplate.content.cloneNode(true);
-    const card = node.querySelector(".activity-card");
-    const titleEl = node.querySelector(".activity-title");
-    const editBtn = node.querySelector(".edit-activity");
-    const delBtn = node.querySelector(".delete-activity");
-    const checklistEl = node.querySelector(".checklist");
-    const addItemBtn = node.querySelector(".add-item");
+    // Header: time + title + recurring label
+    const header = document.createElement("div");
+    header.className = "activity-header";
 
-    titleEl.textContent = `${a.time ? a.time + " • " : ""}${a.title}`;
+    const timeEl = document.createElement("span");
+    timeEl.className = "activity-time";
+    timeEl.textContent = act.time ? act.time : "";
+    header.appendChild(timeEl);
 
-    a.items.forEach(item => {
+    const titleEl = document.createElement("span");
+    titleEl.className = "activity-title";
+    titleEl.textContent = act.title;
+    header.appendChild(titleEl);
+
+    if (act.isRecurring) {
+      const recurringLabel = document.createElement("span");
+      recurringLabel.className = "recurring-label";
+      recurringLabel.textContent = "🔁 Recurring";
+      header.appendChild(recurringLabel);
+    }
+
+    activityDiv.appendChild(header);
+
+    // Checklist with delete child item
+    const checklist = document.createElement("ul");
+    act.items.forEach((item, itemIdx) => {
       const li = document.createElement("li");
+
       const cb = document.createElement("input");
       cb.type = "checkbox";
       cb.checked = item.done;
-      cb.onchange = () => { item.done = cb.checked; };
-      const span = document.createElement("span");
-      span.textContent = item.text;
+
+      cb.onchange = () => {
+        item.done = cb.checked;
+        autoSaveDay();
+
+        activityDiv.classList.add("activity-updated");
+        setTimeout(() => activityDiv.classList.remove("activity-updated"), 1000);
+      };
+
       li.appendChild(cb);
-      li.appendChild(span);
-      checklistEl.appendChild(li);
+      li.appendChild(document.createTextNode(" " + item.text));
+
+      // 🗑 Delete child item button
+      const delItemBtn = document.createElement("button");
+      delItemBtn.textContent = "🗑";
+      delItemBtn.title = "Delete item";
+      delItemBtn.onclick = () => {
+        act.items.splice(itemIdx, 1);
+        renderActivities(displayActivities);
+        autoSaveDay();
+
+        activityDiv.classList.add("activity-updated");
+        setTimeout(() => activityDiv.classList.remove("activity-updated"), 1000);
+      };
+      li.appendChild(delItemBtn);
+
+      checklist.appendChild(li);
     });
+    activityDiv.appendChild(checklist);
 
-    editBtn.onclick = () => {
-      const idx = currentActivities.findIndex(
-        x => x.title === a.title && x.time === a.time && x.items.length === a.items.length
-      );
-      if (idx >= 0) {
-        const newTitle = (prompt("Activity title:", currentActivities[idx].title) ?? currentActivities[idx].title).trim();
-        const newTime = parseTimeStr(prompt("Time (HH:MM):", currentActivities[idx].time) ?? currentActivities[idx].time);
-        currentActivities[idx].title = newTitle;
-        currentActivities[idx].time = newTime;
-        renderActivities(buildDisplayActivities());
-      } else {
-        alert("This is a recurring overlay. Edit it in Recurring panel.");
-      }
-    };
+    // Buttons only for non-recurring items
+    if (!act.isRecurring) {
+      const editBtn = document.createElement("button");
+      editBtn.textContent = "✏️ Edit";
+      editBtn.onclick = () => {
+        const newTitle = prompt("New title?", act.title);
+        if (newTitle) act.title = newTitle;
+        renderActivities(displayActivities);
+        autoSaveDay();
 
-    delBtn.onclick = () => {
-      const idx = currentActivities.findIndex(
-        x => x.title === a.title && x.time === a.time && x.items.length === a.items.length
-      );
-      if (idx >= 0) {
-        currentActivities.splice(idx, 1);
-        renderActivities(buildDisplayActivities());
-      } else {
-        alert("This is a recurring overlay. Delete it in Recurring panel.");
-      }
-    };
+        activityDiv.classList.add("activity-updated");
+        setTimeout(() => activityDiv.classList.remove("activity-updated"), 1000);
+      };
+      activityDiv.appendChild(editBtn);
 
-    addItemBtn.onclick = () => {
-      const idx = currentActivities.findIndex(
-        x => x.title === a.title && x.time === a.time && x.items.length === a.items.length
-      );
-      if (idx >= 0) {
-        const text = prompt("Checklist item:");
-        if (!text) return;
-        currentActivities[idx].items.push({ text: text.trim(), done: false });
-        renderActivities(buildDisplayActivities());
-      } else {
-        alert("Add items to recurring via the Recurring panel.");
-      }
-    };
+      const delBtn = document.createElement("button");
+      delBtn.textContent = "🗑️ Delete";
+      delBtn.onclick = () => {
+        displayActivities.splice(idx, 1);
+        renderActivities(displayActivities);
+        autoSaveDay();
 
-    activitiesEl.appendChild(card);
-  }
+        activityDiv.classList.add("activity-updated");
+        setTimeout(() => activityDiv.classList.remove("activity-updated"), 1000);
+      };
+      activityDiv.appendChild(delBtn);
+
+      const addItemBtn = document.createElement("button");
+      addItemBtn.textContent = "➕ Add Item";
+      addItemBtn.onclick = () => {
+        const newItem = prompt("New checklist item?");
+        if (newItem) {
+          act.items.push({ text: newItem, done: false });
+          renderActivities(displayActivities);
+          autoSaveDay();
+
+          activityDiv.classList.add("activity-updated");
+          setTimeout(() => activityDiv.classList.remove("activity-updated"), 1000);
+        }
+      };
+      activityDiv.appendChild(addItemBtn);
+    }
+
+    container.appendChild(activityDiv);
+  });
 }
 
 // ----- Activity add/save -----
@@ -619,6 +721,7 @@ addActivityBtn.onclick = () => {
     .map(t => ({ text: t, done: false }));
   currentActivities.push({ title: title.trim(), time, items });
   renderActivities(buildDisplayActivities());
+  autoSaveDay();
 };
 
 saveDayBtn.onclick = async () => {
@@ -627,15 +730,7 @@ saveDayBtn.onclick = async () => {
   alert("Saved.");
 };
 
-// ----- Quick helpers -----
-newDayFileBtn.onclick = async () => {
-  if (!dataDirHandle) {
-    alert("Choose a data folder first.");
-    return;
-  }
-  await getDayFileHandle(new Date());
-  alert("Today file ready.");
-};
+
 
 // ----- Export/Import (recursive for hierarchy) -----
 async function zipDirectory(dirHandle, zipFolder) {
@@ -711,25 +806,49 @@ importZipInput.onchange = async (e) => {
 };
 
 // ----- Recurring UI -----
+const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function formatTime(timeStr) {
+  if (!timeStr) return "";
+  const [hour, minute] = timeStr.split(":").map(Number);
+  const date = new Date();
+  date.setHours(hour, minute);
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function formatRecurringLabel(ev) {
+  const parts = [];
+
+  if (ev.type === "weekly") {
+    const dowName = dayNames[ev.dayOfWeek ?? 0];
+    parts.push(`Weekly every ${ev.interval || 1} (${dowName})`);
+  } else if (ev.type === "daily") {
+    parts.push(`Daily every ${ev.interval || 1}`);
+  } else if (ev.type === "monthly") {
+    parts.push(`Monthly every ${ev.interval || 1} (Day ${ev.dayOfMonth})`);
+  }
+
+  parts.push(`• ${formatTime(ev.time)} ${ev.title}`);
+  return parts.join(" ");
+}
+
 function renderRecurring() {
   recurringListEl.innerHTML = "";
+
   recurringEvents.forEach((ev, i) => {
     const card = document.createElement("div");
     card.className = "recurring-card";
 
-    const labelParts = [];
-    labelParts.push(ev.type);
-    labelParts.push(`every ${ev.interval}`);
-    if (ev.type === "weekly" && ev.dayOfWeek != null) labelParts.push(`(DOW ${ev.dayOfWeek})`);
-    if (ev.type === "monthly" && ev.dayOfMonth != null) labelParts.push(`(DOM ${ev.dayOfMonth})`);
     const left = document.createElement("div");
-    left.textContent = `${labelParts.join(" ")} • ${ev.time || ""} ${ev.title}`;
+    left.textContent = formatRecurringLabel(ev);
 
     const actions = document.createElement("div");
     actions.className = "recurring-actions";
+
     const editBtn = document.createElement("button");
     editBtn.textContent = "✎";
     editBtn.onclick = () => openRecurringModal(ev, i);
+
     const delBtn = document.createElement("button");
     delBtn.textContent = "🗑";
     delBtn.onclick = async () => {
@@ -739,6 +858,7 @@ function renderRecurring() {
         renderActivities(buildDisplayActivities());
       }
     };
+
     actions.appendChild(editBtn);
     actions.appendChild(delBtn);
 

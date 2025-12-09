@@ -13,17 +13,13 @@
     
     <div class="left">
       <button id="choose-folder">📁 Choose data folder</button>
-      <button id="new-day-file">➕ Today file</button>
     </div>
-    <button id="view-day">Day</button>
-    <button id="view-week">Week</button>
-    <button id="prev-week">Prev week</button>
-    <button id="next-week">Next week</button>
-    <div class="center" id="month-nav">
-      <button id="prev-month">◀</button>
-      <span id="month-label"></span>
-      <button id="next-month">▶</button>
+
+    <div class="header-title">
+      <div class="main-title">Master Scheduler</div>
+      <div class="subtitle">Never miss a thing again</div>
     </div>
+
     <div class="right">
       <button id="export-zip">⬇ Export all</button>
       <label class="import-label">
@@ -48,6 +44,7 @@
         <div class="day-header">
           <h2 id="day-title"></h2>
           <div class="day-actions">
+            <button id="today-btn">Today</button>
             <button id="add-activity">+ Add activity</button>
             <button id="save-day">💾 Save</button>
           </div>
@@ -149,6 +146,9 @@
       </div>
     </div>
   </div>
+<footer id="status-bar">
+  <span id="save-status"></span>
+</footer>
 
   <!-- App logic -->
   <script src="app.js"></script>
