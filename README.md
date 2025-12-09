@@ -11,7 +11,6 @@ A privacy‑first, offline calendar and task manager that stores your data direc
 - Dark/light theme toggle with persistent preference
 - Help and Settings overlays for easy onboarding and configuration
 - Reminder notifications for upcoming recurring events
-- Week view to visualize your schedule across 7 days
 
 ## 🚀 Getting Started
 1. Clone or download this repository.
