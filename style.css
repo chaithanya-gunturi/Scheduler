@@ -145,6 +145,13 @@ body.light-mode .calendar-day {
 }
 .day-actions { display: flex; gap: 0.5rem; }
 
+#day-view {
+  flex: 1;                  /* allow it to grow inside flex layouts */
+  overflow-y: auto;          /* enable vertical scrolling */
+  max-height: calc(100vh - 100px); /* adjust based on header/footer height */
+  padding: 8px;
+}
+
 /* Activity cards */
 .activity {
   background: var(--card-bg);
@@ -473,4 +480,5 @@ justify-content: center;
   color: var(--text);
   font-size: 1em;
   line-height: 1.4;
+
 }
