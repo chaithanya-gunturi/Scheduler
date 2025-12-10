@@ -494,41 +494,46 @@ function renderCalendar(year, month) {
     grid.appendChild(empty);
   }
 
-  // Actual days
-  const today = new Date();
-  for (let d = 1; d <= daysInMonth; d++) {
-    const date = new Date(year, month, d);
-    const dayEl = document.createElement("div");
-    dayEl.className = "calendar-day";
-    dayEl.textContent = d;
+ // Actual days
+const today = new Date();
+for (let d = 1; d <= daysInMonth; d++) {
+  const date = new Date(year, month, d);
+  const dayEl = document.createElement("div");
+  dayEl.className = "calendar-day";
+  dayEl.textContent = d;
 
-    // Highlight today
-    if (
-      date.getDate() === today.getDate() &&
-      date.getMonth() === today.getMonth() &&
-      date.getFullYear() === today.getFullYear()
-    ) {
-      dayEl.classList.add("today-cell");
-    }
-
-    // Highlight the currently selected day
-    if (
-      currentDate &&
-      date.getDate() === currentDate.getDate() &&
-      date.getMonth() === currentDate.getMonth() &&
-      date.getFullYear() === currentDate.getFullYear()
-    ) {
-      dayEl.classList.add("selected-day");
-    }
-
-    dayEl.onclick = () => {
-      currentDate = date;
-      openDay(date); // show day view
-      renderCalendar(year, month); // refresh highlight
-    };
-
-    grid.appendChild(dayEl);
+  // Mark past dates
+  if (date < new Date(today.getFullYear(), today.getMonth(), today.getDate())) {
+    dayEl.classList.add("past-day");
   }
+
+  // Highlight today
+  if (
+    date.getDate() === today.getDate() &&
+    date.getMonth() === today.getMonth() &&
+    date.getFullYear() === today.getFullYear()
+  ) {
+    dayEl.classList.add("today-cell");
+  }
+
+  // Highlight the currently selected day
+  if (
+    currentDate &&
+    date.getDate() === currentDate.getDate() &&
+    date.getMonth() === currentDate.getMonth() &&
+    date.getFullYear() === currentDate.getFullYear()
+  ) {
+    dayEl.classList.add("selected-day");
+  }
+
+  dayEl.onclick = () => {
+    currentDate = date;
+    openDay(date); // show day view
+    renderCalendar(year, month); // refresh highlight
+  };
+
+  grid.appendChild(dayEl);
+}
 
   calendarEl.appendChild(grid);
 }
@@ -1609,16 +1614,17 @@ function formatTime(timeStr) {
 function formatRecurringLabel(ev) {
   const parts = [];
 
-  if (ev.type === "weekly") {
-    const dowName = dayNames[ev.dayOfWeek ?? 0];
-    parts.push(`Weekly every ${ev.interval || 1} (${dowName})`);
-  } else if (ev.type === "daily") {
-    parts.push(`Daily every ${ev.interval || 1}`);
-  } else if (ev.type === "monthly") {
-    parts.push(`Monthly every ${ev.interval || 1} (Day ${ev.dayOfMonth})`);
-  }
+//  if (ev.type === "weekly") {
+//    const dowName = dayNames[ev.dayOfWeek ?? 0];
+//    parts.push(`Weekly every ${ev.interval || 1} (${dowName})`);
+//  } else if (ev.type === "daily") {
+//    parts.push(`Daily every ${ev.interval || 1}`);
+//  } else if (ev.type === "monthly") {
+//    parts.push(`Monthly every ${ev.interval || 1} (Day ${ev.dayOfMonth})`);
+//  }
 
-  parts.push(`• ${formatTime(ev.time)} ${ev.title}`);
+//  parts.push(`• ${formatTime(ev.time)} ${ev.title}`);
+    parts.push(`${ev.title}`);
   return parts.join(" ");
 }
 

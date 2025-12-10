@@ -647,3 +647,9 @@ justify-content: center;
   cursor: not-allowed;
   opacity: 0.6;
 }
+
+.past-day {
+  color: var(--muted, #999);
+  opacity: 0.6;
+}
+
