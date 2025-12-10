@@ -147,6 +147,9 @@ todayBtn.onclick = () => {
   currentDate = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // strip time
   openDay(currentDate); // re-render day view
   renderCalendar(currentDate.getFullYear(), currentDate.getMonth()); // update calendar highlight
+
+  // Disable button since we're now on today
+  todayBtn.disabled = true;
 };
 
 
@@ -179,6 +182,7 @@ async function initFolder() {
     console.error("initFolder error:", err);
     showPopup("Unable to access local storage folder. Please choose a data folder.");
   }
+  
 }
 initFolder();
 
@@ -401,6 +405,32 @@ function scheduleRemindersForDate(date) {
   });
 }
 
+function scheduleRemindersForActivities(date) {
+  const leadMin = parseInt(localStorage.getItem("reminderLead") || "15", 10);
+  if (Notification.permission !== "granted") return;
+
+  currentActivities.forEach(act => {
+    if (!act.time) return; // skip untimed
+    if (act.isRecurring) return; // skip recurring (already handled separately)
+
+    const [h, m] = act.time.split(":").map(Number);
+    const eventTime = new Date(date);
+    eventTime.setHours(h, m, 0, 0);
+
+    const reminderTime = new Date(eventTime.getTime() - leadMin * 60 * 1000);
+    const delay = reminderTime.getTime() - Date.now();
+
+    if (delay > 0) {
+      setTimeout(() => {
+        new Notification("Upcoming activity", {
+          body: `${act.title} at ${act.time}`,
+          tag: `activity-${act.title}-${act.time}`
+        });
+      }, delay);
+    }
+  });
+}
+
 // ----- Calendar rendering -----
 function renderCalendar(year, month) {
   calendarEl.innerHTML = "";
@@ -465,11 +495,21 @@ function renderCalendar(year, month) {
   }
 
   // Actual days
+  const today = new Date();
   for (let d = 1; d <= daysInMonth; d++) {
     const date = new Date(year, month, d);
     const dayEl = document.createElement("div");
     dayEl.className = "calendar-day";
     dayEl.textContent = d;
+
+    // Highlight today
+    if (
+      date.getDate() === today.getDate() &&
+      date.getMonth() === today.getMonth() &&
+      date.getFullYear() === today.getFullYear()
+    ) {
+      dayEl.classList.add("today-cell");
+    }
 
     // Highlight the currently selected day
     if (
@@ -526,25 +566,45 @@ async function openDay(date) {
     return;
   }
 
-  currentDate = date;
-  dayTitleEl.textContent = date.toDateString();
-  dayViewEl.classList.remove("hidden");
+  // Animate fade-out before switching
+  dayViewEl.classList.add("fade-out");
 
-  currentFileHandle = await getDayFileHandle(date);
-  const text = await readDayFile(currentFileHandle);
-  currentActivities = parseActivities(text);
+  setTimeout(async () => {
+    currentDate = date;
+    dayTitleEl.textContent = date.toDateString();
+    dayViewEl.classList.remove("hidden");
 
-  // Build display list with overlayed recurring (no persistence)
-  const displayActivities = buildDisplayActivities();
-  renderActivities(displayActivities);
+    currentFileHandle = await getDayFileHandle(date);
+    const text = await readDayFile(currentFileHandle);
+    currentActivities = parseActivities(text);
 
-  renderActivities(buildDisplayActivities());
+    // Build display list with overlayed recurring (no persistence)
+    const displayActivities = buildDisplayActivities();
+    renderActivities(displayActivities);
 
-  const today = new Date();
-  if (today.toDateString() === date.toDateString()) {
-    scheduleRemindersForDate(today);
-  }
+    const today = new Date();
+    if (today.toDateString() === date.toDateString()) {
+      scheduleRemindersForDate(today);
+      scheduleRemindersForActivities(today);
+    }
 
+    // Toggle Today button state
+    const isToday =
+      date.getDate() === today.getDate() &&
+      date.getMonth() === today.getMonth() &&
+      date.getFullYear() === today.getFullYear();
+
+    if (typeof todayBtn !== "undefined" && todayBtn) {
+      todayBtn.disabled = isToday;
+    }
+
+    // Trigger fade-in + scale-in after content refresh
+    dayViewEl.classList.remove("fade-out");
+    dayViewEl.classList.add("fade-in");
+
+    // Remove fade-in class after animation completes
+    setTimeout(() => dayViewEl.classList.remove("fade-in"), 300);
+  }, 200); // wait 200ms for fade-out
 }
 
 async function renderWeekView(startDate) {
@@ -746,15 +806,121 @@ if (hour !== currentHour) {
 
     // Controls for non-recurring
     if (!act.isRecurring) {
-      const editBtn = document.createElement("button");
-      editBtn.textContent = "✏️ Edit";
-      editBtn.onclick = () => {
-        const newTitle = prompt("New title?", act.title);
-        if (newTitle) act.title = newTitle;
-        autoSaveDay();
-        renderActivities(buildDisplayActivities());
-      };
-      activityDiv.appendChild(editBtn);
+    const editBtn = document.createElement("button");
+  editBtn.textContent = "✏️ Edit";
+  editBtn.onclick = () => {
+  // Create a simple modal
+  const modal = document.createElement("div");
+  modal.className = "edit-modal";
+
+  const form = document.createElement("div");
+  form.className = "edit-form";
+
+  // Title input
+  const titleLabel = document.createElement("label");
+  titleLabel.textContent = "Title:";
+  const titleInput = document.createElement("input");
+  titleInput.type = "text";
+  titleInput.value = act.title;
+  titleLabel.appendChild(titleInput);
+
+  // Time input
+  const timeLabel = document.createElement("label");
+  timeLabel.textContent = "Time:";
+  const timeInput = document.createElement("input");
+  timeInput.type = "time";
+  timeInput.value = act.time || "";
+  timeLabel.appendChild(timeInput);
+
+  // Date input (new)
+  const dateLabel = document.createElement("label");
+  dateLabel.textContent = "Date:";
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+
+  // Prefill with the currently open day (YYYY-MM-DD)
+  const isoCurrent = [
+    currentDate.getFullYear(),
+    String(currentDate.getMonth() + 1).padStart(2, "0"),
+    String(currentDate.getDate()).padStart(2, "0")
+  ].join("-");
+  dateInput.value = isoCurrent;
+
+  dateLabel.appendChild(dateInput);
+
+  // Save button
+  const saveBtn = document.createElement("button");
+  saveBtn.textContent = "Save";
+  saveBtn.onclick = async () => {
+    // Update title/time as before
+    act.title = titleInput.value.trim();
+    act.time = parseTimeStr(timeInput.value);
+
+    const newDateStr = dateInput.value;
+    if (!newDateStr) {
+      showPopup("Please select a valid date.");
+      return;
+    }
+    const newDate = new Date(newDateStr);
+
+    // Compare with currentDate (the day being edited)
+    const dateChanged =
+      newDate.getDate() !== currentDate.getDate() ||
+      newDate.getMonth() !== currentDate.getMonth() ||
+      newDate.getFullYear() !== currentDate.getFullYear();
+
+    if (dateChanged) {
+      // 1) Remove from current day's in-memory list
+      const idx = currentActivities.findIndex(a => a === act);
+      if (idx !== -1) currentActivities.splice(idx, 1);
+
+      // 2) Load target day activities
+      const targetHandle = await getDayFileHandle(newDate);
+      const targetText = await readDayFile(targetHandle);
+      let targetActivities = parseActivities(targetText);
+
+      // 3) Append the edited activity to target day
+      targetActivities.push(act);
+
+      // 4) Persist both days
+      await writeDayFile(targetHandle, targetActivities);
+      await writeDayFile(currentFileHandle, currentActivities);
+
+      // 5) Feedback + refresh
+      showPopup("Activity moved to the new date.");
+      renderActivities(buildDisplayActivities());
+      renderCalendar(currentDate.getFullYear(), currentDate.getMonth());
+
+      // Optional: auto-open target day to show the moved item
+      // await openDay(newDate);
+
+      // Close modal
+      document.body.removeChild(modal);
+      return;
+    }
+
+    // No date change: save current day as usual
+    autoSaveDay();
+    renderActivities(buildDisplayActivities());
+    document.body.removeChild(modal);
+  };
+
+  // Cancel button
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.onclick = () => {
+    document.body.removeChild(modal);
+  };
+
+  form.appendChild(titleLabel);
+  form.appendChild(timeLabel);
+  form.appendChild(dateLabel);
+  form.appendChild(saveBtn);
+  form.appendChild(cancelBtn);
+  modal.appendChild(form);
+  document.body.appendChild(modal);
+};
+activityDiv.appendChild(editBtn);
 
       const delBtn = document.createElement("button");
       delBtn.textContent = "🗑️ Delete";
@@ -1287,23 +1453,71 @@ function renderActivityCard(act) {
   return activityDiv;
 }
 
-// ----- Activity add/save -----
-addActivityBtn.onclick = () => {
-  const title = prompt("Activity title?");
-  if (!title) return;
-  const time = parseTimeStr(prompt("Time (HH:MM)?") ?? "");
-  const itemsRaw = prompt("Checklist items (comma separated)?") ?? "";
-  const items = itemsRaw.split(",").map(s => s.trim()).filter(Boolean)
-    .map(t => ({ text: t, done: false }));
-  currentActivities.push({ title: title.trim(), time, items });
-  renderActivities(buildDisplayActivities());
-  autoSaveDay();
-};
 
-saveDayBtn.onclick = async () => {
-  if (!currentFileHandle) return;
-  await writeDayFile(currentFileHandle, currentActivities); // save only real activities
-  showPopup("Saved.");
+
+addActivityBtn.onclick = () => {
+  // Create modal
+  const modal = document.createElement("div");
+  modal.className = "edit-modal";
+
+  const form = document.createElement("div");
+  form.className = "edit-form";
+
+  // Title input
+  const titleLabel = document.createElement("label");
+  titleLabel.textContent = "Title:";
+  const titleInput = document.createElement("input");
+  titleInput.type = "text";
+  titleInput.placeholder = "Activity title";
+  titleLabel.appendChild(titleInput);
+
+  // Time input
+  const timeLabel = document.createElement("label");
+  timeLabel.textContent = "Time:";
+  const timeInput = document.createElement("input");
+  timeInput.type = "time";
+  timeLabel.appendChild(timeInput);
+
+  // Items input
+  const itemsLabel = document.createElement("label");
+  itemsLabel.textContent = "Checklist items (comma separated):";
+  const itemsInput = document.createElement("input");
+  itemsInput.type = "text";
+  itemsInput.placeholder = "e.g. task1, task2";
+  itemsLabel.appendChild(itemsInput);
+
+  // Save button
+  const saveBtn = document.createElement("button");
+  saveBtn.textContent = "Add Activity";
+  saveBtn.onclick = () => {
+    const title = titleInput.value.trim();
+    if (!title) { alert("Title is required"); return; }
+
+    const time = parseTimeStr(timeInput.value);
+    const items = itemsInput.value.split(",").map(s => s.trim()).filter(Boolean)
+      .map(t => ({ text: t, done: false }));
+
+    currentActivities.push({ title, time, items });
+    autoSaveDay();
+    renderActivities(buildDisplayActivities());
+    document.body.removeChild(modal);
+  };
+
+  // Cancel button
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.onclick = () => {
+    document.body.removeChild(modal);
+  };
+
+  form.appendChild(titleLabel);
+  form.appendChild(timeLabel);
+  form.appendChild(itemsLabel);
+  form.appendChild(saveBtn);
+  form.appendChild(cancelBtn);
+
+  modal.appendChild(form);
+  document.body.appendChild(modal);
 };
 
 
@@ -1555,3 +1769,15 @@ function showPopup(message) {
 document.getElementById("popup-close").onclick = () => {
   document.getElementById("popup-overlay").classList.remove("active");
 };
+
+
+// ----- Trigger "Today" button automatically 2 seconds after page load -----
+window.onload = function() {
+  setTimeout(() => {
+    const todayBtn = document.getElementById("today-btn");
+    if (todayBtn) {
+      todayBtn.click(); // simulate user click after 2s
+    }
+  }, 100); // 2000ms = 2 seconds
+};
+
