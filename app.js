@@ -202,51 +202,168 @@ function parseTimeStr(str) {
 function parseActivities(text) {
   const lines = text.split("\n");
   const activities = [];
+  const overrides = {};
   let current = null;
+  let currentOverride = null;
 
   for (const raw of lines) {
-    const line = raw.trimEnd();
+    const line = raw.trim();
     if (!line) continue;
 
     if (line.startsWith("Activity:")) {
-      if (current) activities.push(current);
-      const payload = line.replace("Activity:", "").trim();
-
-      // Detect activity-level done marker
-      const done = payload.endsWith("[x]");
-      const cleanPayload = done ? payload.replace(/\s*\[x\]$/, "") : payload;
-
-      const parts = cleanPayload.split("|");
-      let time = "", title = cleanPayload;
-      if (parts.length > 1) {
-        time = parseTimeStr(parts[0].trim());
-        title = parts.slice(1).join("|").trim();
-      } else {
-        title = cleanPayload;
+      // flush any previous activity before starting a new one
+      if (current) {
+        activities.push(current);
+        current = null;
       }
-      current = { title, time, items: [], done };
-    } else if (line.startsWith("-")) {
-      if (!current) current = { title: "Untitled", time: "", items: [], done: false };
+      const payload = line.slice("Activity:".length).trim();
+      const done = payload.endsWith("[x]");
+      const clean = done ? payload.replace(/\s*\[x\]$/, "") : payload;
+      const parts = clean.split("|");
+      let time = "", title = clean;
+      if (parts.length > 1) {
+        time = parts[0].trim();
+        title = parts.slice(1).join("|").trim();
+      }
+      current = { title, time, items: [], done, isRecurring: false };
+      currentOverride = null;
+      continue;
+    }
+
+    if (line.startsWith("RecurringOverride:")) {
+      // flush any pending activity before switching to override
+      if (current) {
+        activities.push(current);
+        current = null;
+      }
+      const payload = line.slice("RecurringOverride:".length).trim();
+      const done = payload.endsWith("[x]");
+      const recId = done ? payload.replace(/\s*\[x\]$/, "") : payload;
+      currentOverride = { done, itemOverrides: [], itemState: {} };
+      overrides[recId] = currentOverride;
+      continue;
+    }
+
+    if (line.startsWith("-")) {
       const done = /\[x\]/.test(line);
       const itemText = line.replace(/- \[(x| )\]\s?/, "");
-      current.items.push({ text: itemText, done });
+      if (current) {
+        current.items.push({ text: itemText, done });
+      } else if (currentOverride) {
+        currentOverride.itemOverrides.push({ text: itemText, done });
+      }
+      continue;
+    }
+
+    if (line.startsWith("ItemState:")) {
+      const payload = line.slice("ItemState:".length).trim();
+      const [recId, key, state] = payload.split("|");
+      if (!overrides[recId]) overrides[recId] = { done: false, itemOverrides: [], itemState: {} };
+      overrides[recId].itemState[key] = (state.trim() === "x");
+      continue;
     }
   }
+
+  // flush last activity if still pending
   if (current) activities.push(current);
+
+  const dateKey = currentDateKey();
+  saveDayOverrides(dateKey, overrides);
+
   return activities;
 }
 
 function serializeActivities(activities) {
+  const dateKey = currentDateKey();
+  const overrides = getDayOverrides(dateKey) || {};
   let out = "";
-  for (const a of activities) {
+
+  // One-off activities
+  for (const a of activities.filter(x => !x.isRecurring)) {
     const head = a.time ? `${a.time} | ${a.title}` : a.title;
     out += `Activity: ${head}${a.done ? " [x]" : ""}\n`;
-    for (const i of a.items) {
+    for (const i of a.items || []) {
       out += `- [${i.done ? "x" : " "}] ${i.text}\n`;
     }
     out += "\n";
   }
+
+  // Recurring overrides
+  for (const [recId, ov] of Object.entries(overrides)) {
+    out += `RecurringOverride: ${recId}${ov.done ? " [x]" : ""}\n`;
+
+    if (ov.itemOverrides) {
+      for (const i of ov.itemOverrides) {
+        out += `- [${i.done ? "x" : " "}] ${i.text}\n`;
+      }
+    }
+
+    if (ov.itemState) {
+      for (const [key, state] of Object.entries(ov.itemState)) {
+        out += `ItemState: ${recId}|${key}|${state ? "x" : " "}\n`;
+      }
+    }
+
+    out += "\n";
+  }
+
   return out.trim() + "\n";
+}
+
+// Decide if a recurring template applies on a given dateKey (YYYY-MM-DD)
+// Helpers
+function toDate(dateKeyOrISO) {
+  if (!dateKeyOrISO) return null;
+  const d = new Date(dateKeyOrISO);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function daysBetween(a, b) {
+  const ms = toDate(b) - toDate(a);
+  return Math.floor(ms / (24 * 60 * 60 * 1000));
+}
+
+function weeksBetween(a, b) {
+  return Math.floor(daysBetween(a, b) / 7);
+}
+
+function appliesOnDate(tpl, dateKey) {
+  if (!tpl) return false;
+  const rec = tpl.recurrence || {};
+  const date = toDate(dateKey);
+  const start = tpl.startDate ? toDate(tpl.startDate) : null;
+  const end = tpl.endDate ? toDate(tpl.endDate) : null;
+  const interval = Math.max(1, Number(rec.interval || 1));
+
+  if (start && date < start) return false;
+  if (end && date > end) return false;
+
+  switch (rec.type) {
+    case "daily": {
+      const anchor = start || date;
+      const diff = daysBetween(anchor, date);
+      return diff % interval === 0;
+    }
+    case "weekly": {
+      const targetDow = typeof rec.dayOfWeek === "number" ? rec.dayOfWeek : null;
+      if (targetDow == null) return false;
+      if (date.getDay() !== targetDow) return false;
+      const anchor = start || date;
+      const wdiff = weeksBetween(anchor, date);
+      return wdiff % interval === 0;
+    }
+    case "monthly": {
+      const targetDom = typeof rec.dayOfMonth === "number" ? rec.dayOfMonth : null;
+      if (targetDom == null) return false;
+      if (date.getDate() !== targetDom) return false;
+      const monthsDiff =
+        (date.getFullYear() - (start ? start.getFullYear() : date.getFullYear())) * 12 +
+        (date.getMonth() - (start ? start.getMonth() : date.getMonth()));
+      return monthsDiff % interval === 0;
+    }
+    default:
+      return false;
+  }
 }
 
 // ----- File helpers -----
@@ -317,8 +434,9 @@ async function autoSaveDay() {
   clearTimeout(saveTimeout);
   saveTimeout = setTimeout(async () => {
     try {
-      await writeDayFile(currentFileHandle, currentActivities);
-      showSaveStatus(); 
+      const display = buildDisplayActivities(); // merge one-offs + recurring overrides
+      await writeDayFile(currentFileHandle, display);
+      showSaveStatus();
     } catch (err) {
       console.error("Auto-save failed:", err);
     }
@@ -337,6 +455,23 @@ async function loadRecurring() {
   } catch {
     recurringEvents = [];
   }
+
+  // Normalize legacy recurring entries to include id and recurrence object
+  recurringEvents = recurringEvents.map((ev, i) => {
+    const id = ev.id || `rec_${i}_${(ev.title || "untitled").toLowerCase().replace(/\s+/g, "_")}`;
+    const recurrence = ev.recurrence || {
+      type: ev.type || "weekly",
+      interval: ev.interval || 1,
+      dayOfWeek: ev.dayOfWeek ?? null,
+      dayOfMonth: ev.dayOfMonth ?? null
+    };
+    // Normalize items to objects
+    const items = Array.isArray(ev.items)
+      ? ev.items.map(it => (typeof it === "string" ? { id: null, text: it } : it))
+      : [];
+    return { ...ev, id, recurrence, items };
+  });
+
   renderRecurring();
 }
 
@@ -563,10 +698,20 @@ function getWeekStart(date) {
 }
 
 
+function deleteRecurringOverrideItem(recurringId, itemIdx) {
+  const dateKey = currentDateKey();
+  const overrides = getDayOverrides(dateKey) || {};
+  const ov = overrides[recurringId] || {};
+  if (ov.itemOverrides) {
+    ov.itemOverrides.splice(itemIdx, 1);
+  }
+  overrides[recurringId] = ov;
+  saveDayOverrides(dateKey, overrides);
+  autoSaveDay(); // persist to day file
+}
+
+
 let currentWeekStart = null;
-
-
-
 
 
 // ----- Day view (overlay recurring only for display) -----
@@ -591,6 +736,7 @@ async function openDay(date) {
     // Build display list with overlayed recurring (no persistence)
     const displayActivities = buildDisplayActivities();
     renderActivities(displayActivities);
+    //console.table(displayActivities.map(a => ({ time: a.time || "", title: a.title, isRecurring: !!a.isRecurring })));
 
     const today = new Date();
     if (today.toDateString() === date.toDateString()) {
@@ -664,30 +810,115 @@ async function renderWeekView(startDate) {
 }
 
 function buildDisplayActivities() {
-  const display = [...currentActivities];
+  const dateKey = currentDateKey();
+  const overrides = getDayOverrides(dateKey) || {};
+  const out = [];
 
-  if (currentDate) {
-    recurringEvents.forEach(ev => {
-      if (matchesRecurring(ev, currentDate)) {
-        display.push({
-          title: ev.title,
-          time: ev.time,
-          items: (ev.items || []).map(t => ({ text: t, done: false })),
-          isRecurring: true
-        });
-      }
+  // One-off activities
+  for (const act of currentActivities) {
+    out.push({ ...act, isRecurring: false });
+  }
+
+  // Recurring instances
+  if (!Array.isArray(recurringEvents)) return out;
+
+  for (const tpl of recurringEvents) {
+    if (!tpl || !tpl.id) continue;
+    if (!appliesOnDate(tpl, dateKey)) continue;
+
+    const ov = overrides[tpl.id] || {};
+    const done = !!ov.done;
+
+    const items = [];
+    const itemState = ov.itemState || {};
+
+    (tpl.items || []).forEach((item, idx) => {
+      const key = item && item.id ? item.id : `tplItem_${idx}`;
+      const dayDone = key in itemState ? itemState[key] : false;
+      items.push({
+        text: item ? item.text : "",
+        done: done ? true : dayDone,
+        _key: key,
+        _fromTpl: true
+      });
+    });
+
+    (ov.itemOverrides || []).forEach((ovItem, idx) => {
+      items.push({
+        text: ovItem.text,
+        done: done ? true : !!ovItem.done,
+        _fromOverride: true,
+        _overrideIdx: idx
+      });
+    });
+
+    out.push({
+      id: tpl.id,
+      title: tpl.title || "(Recurring)",
+      time: tpl.time || "",
+      items,
+      done,
+      isRecurring: true
     });
   }
 
-  // Sort by time, untimed last
-  display.sort((a, b) => {
-    if (!a.time && !b.time) return 0;
-    if (!a.time) return 1;
-    if (!b.time) return -1;
-    return a.time.localeCompare(b.time);
-  });
+  return out;
+}
 
-  return display;
+
+
+// Returns the current date key in YYYY-MM-DD format
+function currentDateKey(date = currentDate || new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function getDayOverrides(dateKey) {
+  const raw = localStorage.getItem(`dayOverrides:${dateKey}`);
+  try { return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+}
+
+function saveDayOverrides(dateKey, obj) {
+  localStorage.setItem(`dayOverrides:${dateKey}`, JSON.stringify(obj));
+}
+
+// Generic modal for a single text input
+function openSimpleInputModal(labelText, onSave) {
+  const modal = document.createElement("div");
+  modal.className = "edit-modal";
+
+  const form = document.createElement("div");
+  form.className = "edit-form";
+
+  const label = document.createElement("label");
+  label.textContent = labelText;
+  const input = document.createElement("input");
+  input.type = "text";
+  label.appendChild(input);
+
+  const saveBtn = document.createElement("button");
+  saveBtn.textContent = "Save";
+  saveBtn.onclick = () => {
+    const val = input.value.trim();
+    if (val) onSave(val);
+    document.body.removeChild(modal);
+  };
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.onclick = () => {
+    document.body.removeChild(modal);
+  };
+
+  form.appendChild(label);
+  form.appendChild(saveBtn);
+  form.appendChild(cancelBtn);
+  modal.appendChild(form);
+  document.body.appendChild(modal);
+
+  input.focus();
 }
 
 // ----- Activities rendering -----
@@ -703,138 +934,93 @@ function renderActivities(displayActivities) {
     return a.time.localeCompare(b.time);
   });
 
-  let currentHour = null;
-  let noTimeHeaderRendered = false;
+  const hourBlocks = new Map();
+  let noTimeBlockEl = null;
+
+  function ensureHourBlock(hourStr) {
+    if (hourBlocks.has(hourStr)) return hourBlocks.get(hourStr);
+
+    const block = document.createElement("div");
+    block.className = "hour-block";
+
+    const headerRow = document.createElement("div");
+    headerRow.className = "hour-header-row";
+
+    const label = document.createElement("h3");
+    label.textContent = `${hourStr}:00`;
+
+    const addBtn = document.createElement("button");
+    addBtn.textContent = "➕";
+    addBtn.className = "add-hour-btn";
+    addBtn.title = "Add activity at this hour";
+    addBtn.onclick = () => {
+      openSimpleInputModal("Activity title:", (title) => {
+        if (!title) return;
+        currentActivities.push({
+          title,
+          time: `${hourStr.padStart(2,"0")}:00`,
+          items: [],
+          done: false
+        });
+        autoSaveDay();
+        renderActivities(buildDisplayActivities());
+      });
+    };
+
+    headerRow.appendChild(label);
+    headerRow.appendChild(addBtn);
+    block.appendChild(headerRow);
+    container.appendChild(block);
+
+    hourBlocks.set(hourStr, block);
+    return block;
+  }
+
+  function ensureNoTimeBlock() {
+    if (noTimeBlockEl) return noTimeBlockEl;
+    noTimeBlockEl = document.createElement("div");
+    noTimeBlockEl.className = "hour-block no-time";
+    const label = document.createElement("h3");
+    label.textContent = "No Time";
+    noTimeBlockEl.appendChild(label);
+    container.appendChild(noTimeBlockEl);
+    return noTimeBlockEl;
+  }
 
   displayActivities.forEach(act => {
-    // Create hour header (or "No Time") when the hour changes
-    if (act.time) {
-      const hour = act.time.split(":")[0];
-      if (hour !== currentHour) {
-        currentHour = hour;
-
-        const block = document.createElement("div");
-        block.className = "hour-block";
-
-        const headerRow = document.createElement("div");
-        headerRow.className = "hour-header-row";
-
-        const label = document.createElement("h3");
-        label.textContent = `${hour}:00`;
-
-        // ➕ Quick add button (modal overlay for this hour)
-        const addBtn = document.createElement("button");
-        addBtn.textContent = "➕";
-        addBtn.className = "add-hour-btn";
-        addBtn.title = "Add activity at this hour";
-        addBtn.onclick = () => {
-          const modal = document.createElement("div");
-          modal.className = "edit-modal";
-
-          const form = document.createElement("div");
-          form.className = "edit-form";
-
-          const titleLabel = document.createElement("label");
-          titleLabel.textContent = "Activity title:";
-          const titleInput = document.createElement("input");
-          titleInput.type = "text";
-          titleLabel.appendChild(titleInput);
-
-          const itemsLabel = document.createElement("label");
-          itemsLabel.textContent = "Checklist items (comma separated):";
-          const itemsInput = document.createElement("input");
-          itemsInput.type = "text";
-          itemsLabel.appendChild(itemsInput);
-
-          const saveBtn = document.createElement("button");
-          saveBtn.textContent = "Save";
-          saveBtn.onclick = () => {
-            const title = titleInput.value.trim();
-            if (!title) {
-              showPopup && showPopup("Please enter a title.");
-              return;
-            }
-            const itemsRaw = itemsInput.value || "";
-            const items = itemsRaw.split(",").map(s => s.trim()).filter(Boolean)
-              .map(t => ({ text: t, done: false }));
-            const time = `${hour.padStart(2, "0")}:00`;
-
-            currentActivities.push({ title, time, items, done: false });
-            autoSaveDay();
-            renderActivities(buildDisplayActivities());
-            document.body.removeChild(modal);
-          };
-
-          const cancelBtn = document.createElement("button");
-          cancelBtn.textContent = "Cancel";
-          cancelBtn.onclick = () => {
-            document.body.removeChild(modal);
-          };
-
-          form.appendChild(titleLabel);
-          form.appendChild(itemsLabel);
-          form.appendChild(saveBtn);
-          form.appendChild(cancelBtn);
-          modal.appendChild(form);
-          document.body.appendChild(modal);
-
-          titleInput.focus();
-        };
-
-        headerRow.appendChild(label);
-        headerRow.appendChild(addBtn);
-        block.appendChild(headerRow);
-        container.appendChild(block);
-      }
-    } else if (!noTimeHeaderRendered) {
-      noTimeHeaderRendered = true;
-      const block = document.createElement("div");
-      block.className = "hour-block no-time";
-
-      const label = document.createElement("h3");
-      label.textContent = "No Time";
-      block.appendChild(label);
-
-      container.appendChild(block);
-    }
-
-    // Activity card
     const activityDiv = document.createElement("div");
     activityDiv.className = "activity " + (act.isRecurring ? "recurring" : "oneoff");
     if (act.done) activityDiv.classList.add("done");
 
-    // Header
     const header = document.createElement("div");
     header.className = "activity-header";
 
-    // Activity-level checkbox
     const activityCb = document.createElement("input");
     activityCb.type = "checkbox";
     activityCb.checked = !!act.done;
     activityCb.title = "Mark activity as done";
     activityCb.onchange = () => {
-      act.done = activityCb.checked;
-      if (act.done) {
-        (act.items || []).forEach(item => { item.done = true; });
+      if (act.isRecurring) {
+        toggleRecurringDoneForDay(act.id, activityCb.checked);
+      } else {
+        act.done = activityCb.checked;
+        if (act.done) (act.items || []).forEach(i => i.done = true);
+        autoSaveDay();
       }
-      autoSaveDay();
       renderActivities(buildDisplayActivities());
     };
     header.appendChild(activityCb);
 
-    // Time (can be empty for untimed)
     const timeEl = document.createElement("span");
     timeEl.className = "activity-time";
     timeEl.textContent = act.time || "";
     header.appendChild(timeEl);
 
-    // Title
     const titleEl = document.createElement("span");
     titleEl.className = "activity-title";
-    titleEl.innerHTML = renderTextWithLinks ? renderTextWithLinks(act.title) : act.title;
+    titleEl.innerHTML = renderTextWithLinks(act.title);
     header.appendChild(titleEl);
 
-    // Recurring badge (optional visual)
     if (act.isRecurring) {
       const recurringLabel = document.createElement("span");
       recurringLabel.className = "recurring-label";
@@ -844,7 +1030,7 @@ function renderActivities(displayActivities) {
 
     activityDiv.appendChild(header);
 
-    // Checklist items
+    // Checklist
     const checklist = document.createElement("ul");
     (act.items || []).forEach((item, itemIdx) => {
       const li = document.createElement("li");
@@ -853,83 +1039,62 @@ function renderActivities(displayActivities) {
       cb.type = "checkbox";
       cb.checked = !!item.done;
       cb.onchange = () => {
-        item.done = cb.checked;
-        autoSaveDay();
+        if (act.isRecurring && item._fromTpl) {
+          setRecurringItemDoneForDay(act.id, item._key, cb.checked);
+        } else if (act.isRecurring && item._fromOverride) {
+          updateRecurringOverrideItem(act.id, itemIdx, cb.checked);
+        } else {
+          item.done = cb.checked;
+          autoSaveDay();
+        }
+        renderActivities(buildDisplayActivities());
       };
       li.appendChild(cb);
 
       const span = document.createElement("span");
-      span.innerHTML = " " + (renderTextWithLinks ? renderTextWithLinks(item.text) : item.text);
+      span.innerHTML = " " + renderTextWithLinks(item.text);
       li.appendChild(span);
 
-      const delItemBtn = document.createElement("button");
-      delItemBtn.textContent = "🗑";
-      delItemBtn.title = "Delete item";
-      delItemBtn.onclick = () => {
-        act.items.splice(itemIdx, 1);
-        autoSaveDay();
-        renderActivities(buildDisplayActivities());
-      };
-      li.appendChild(delItemBtn);
+      // Delete button logic
+      if (!act.isRecurring) {
+        // one-off item delete
+        const delItemBtn = document.createElement("button");
+        delItemBtn.textContent = "🗑";
+        delItemBtn.title = "Delete item";
+        delItemBtn.onclick = () => {
+          act.items.splice(itemIdx, 1);
+          autoSaveDay();
+          renderActivities(buildDisplayActivities());
+        };
+        li.appendChild(delItemBtn);
+      } else if (item._fromOverride) {
+        // recurring override item delete
+        const delItemBtn = document.createElement("button");
+        delItemBtn.textContent = "🗑";
+        delItemBtn.title = "Delete override item";
+        delItemBtn.onclick = () => {
+          deleteRecurringOverrideItem(act.id, itemIdx);
+          renderActivities(buildDisplayActivities());
+        };
+        li.appendChild(delItemBtn);
+      }
 
       checklist.appendChild(li);
     });
     activityDiv.appendChild(checklist);
 
-    // Controls for non-recurring activities
+    // Controls
     if (!act.isRecurring) {
-      // Edit button (modal overlay: title + time)
       const editBtn = document.createElement("button");
       editBtn.textContent = "✏️ Edit";
       editBtn.onclick = () => {
-        const modal = document.createElement("div");
-        modal.className = "edit-modal";
-
-        const form = document.createElement("div");
-        form.className = "edit-form";
-
-        const titleLabel = document.createElement("label");
-        titleLabel.textContent = "Activity title:";
-        const titleInput = document.createElement("input");
-        titleInput.type = "text";
-        titleInput.value = act.title || "";
-        titleLabel.appendChild(titleInput);
-
-        const timeLabel = document.createElement("label");
-        timeLabel.textContent = "Time (HH:MM):";
-        const timeInput = document.createElement("input");
-        timeInput.type = "time";
-        timeInput.value = act.time || "";
-        timeLabel.appendChild(timeInput);
-
-        const saveBtn = document.createElement("button");
-        saveBtn.textContent = "Save";
-        saveBtn.onclick = () => {
-          act.title = titleInput.value.trim();
-          act.time = timeInput.value || "";
+        openEditModal(act, () => {
           autoSaveDay();
           renderActivities(buildDisplayActivities());
-          document.body.removeChild(modal);
-        };
-
-        const cancelBtn = document.createElement("button");
-        cancelBtn.textContent = "Cancel";
-        cancelBtn.onclick = () => {
-          document.body.removeChild(modal);
-        };
-
-        form.appendChild(titleLabel);
-        form.appendChild(timeLabel);
-        form.appendChild(saveBtn);
-        form.appendChild(cancelBtn);
-        modal.appendChild(form);
-        document.body.appendChild(modal);
-
-        titleInput.focus();
+        });
       };
       activityDiv.appendChild(editBtn);
 
-      // Delete button
       const delBtn = document.createElement("button");
       delBtn.textContent = "🗑️ Delete";
       delBtn.onclick = () => {
@@ -942,58 +1107,96 @@ function renderActivities(displayActivities) {
       };
       activityDiv.appendChild(delBtn);
 
-      // Add Item button (modal overlay)
       const addItemBtn = document.createElement("button");
       addItemBtn.textContent = "➕ Add Item";
       addItemBtn.onclick = () => {
-        const modal = document.createElement("div");
-        modal.className = "edit-modal";
-
-        const form = document.createElement("div");
-        form.className = "edit-form";
-
-        const itemLabel = document.createElement("label");
-        itemLabel.textContent = "New checklist item:";
-        const itemInput = document.createElement("input");
-        itemInput.type = "text";
-        itemLabel.appendChild(itemInput);
-
-        const saveBtn = document.createElement("button");
-        saveBtn.textContent = "Save";
-        saveBtn.onclick = () => {
-          const newItem = itemInput.value.trim();
-          if (newItem) {
-            if (!act.items) act.items = [];
-            act.items.push({ text: newItem, done: false });
-            autoSaveDay();
-            renderActivities(buildDisplayActivities());
-          }
-          document.body.removeChild(modal);
-        };
-
-        const cancelBtn = document.createElement("button");
-        cancelBtn.textContent = "Cancel";
-        cancelBtn.onclick = () => {
-          document.body.removeChild(modal);
-        };
-
-        form.appendChild(itemLabel);
-        form.appendChild(saveBtn);
-        form.appendChild(cancelBtn);
-        modal.appendChild(form);
-        document.body.appendChild(modal);
-
-        itemInput.focus();
+        openSimpleInputModal("New checklist item:", (val) => {
+          if (!val) return;
+          act.items.push({ text: val.trim(), done: false });
+          autoSaveDay();
+          renderActivities(buildDisplayActivities());
+        });
+      };
+      activityDiv.appendChild(addItemBtn);
+    } else {
+      const addItemBtn = document.createElement("button");
+      addItemBtn.textContent = "➕ Add Item (today)";
+      addItemBtn.onclick = () => {
+        openSimpleInputModal("New checklist item:", (val) => {
+          if (!val) return;
+          addItemToRecurringInstance(act.id, val.trim());
+          renderActivities(buildDisplayActivities());
+        });
       };
       activityDiv.appendChild(addItemBtn);
     }
 
-    // Append to the latest block (sorted order ensures correct placement)
-    const blocks = container.querySelectorAll(".hour-block");
-    const target = blocks[blocks.length - 1] || container;
-    target.appendChild(activityDiv);
+    // Append to correct block
+    if (act.time) {
+      const hour = act.time.split(":")[0];
+      const block = ensureHourBlock(hour);
+      block.appendChild(activityDiv);
+    } else {
+      const block = ensureNoTimeBlock();
+      block.appendChild(activityDiv);
+    }
   });
 }
+
+async function persistOverridesForDate(dateKey) {
+  if (!currentFileHandle) return;
+  const display = buildDisplayActivities();
+  const text = serializeActivities(display);
+  const writable = await currentFileHandle.createWritable();
+  await writable.write(text);
+  await writable.close();
+  showSaveStatus && showSaveStatus();
+}
+
+function toggleRecurringDoneForDay(recurringId, checked) {
+  const dateKey = currentDateKey();
+  const overrides = getDayOverrides(dateKey) || {};
+  const ov = overrides[recurringId] || {};
+  ov.done = checked;
+  overrides[recurringId] = ov;
+  saveDayOverrides(dateKey, overrides);
+  autoSaveDay(); // triggers merged save
+}
+
+function setRecurringItemDoneForDay(recurringId, itemKey, checked) {
+  const dateKey = currentDateKey();
+  const overrides = getDayOverrides(dateKey) || {};
+  const ov = overrides[recurringId] || {};
+  ov.itemState = ov.itemState || {};
+  ov.itemState[itemKey] = checked;
+  overrides[recurringId] = ov;
+  saveDayOverrides(dateKey, overrides);
+  persistOverridesForDate(dateKey);
+}
+
+function updateRecurringOverrideItem(recurringId, itemIdx, checked) {
+  const dateKey = currentDateKey();
+  const overrides = getDayOverrides(dateKey) || {};
+  const ov = overrides[recurringId] || {};
+  if (ov.itemOverrides && ov.itemOverrides[itemIdx]) {
+    ov.itemOverrides[itemIdx].done = checked;
+  }
+  overrides[recurringId] = ov;
+  saveDayOverrides(dateKey, overrides);
+  persistOverridesForDate(dateKey);
+}
+
+function addItemToRecurringInstance(recurringId, text) {
+  const dateKey = currentDateKey();
+  const overrides = getDayOverrides(dateKey) || {};
+  const ov = overrides[recurringId] || {};
+  ov.itemOverrides = ov.itemOverrides || [];
+  ov.itemOverrides.push({ text, done: false });
+  overrides[recurringId] = ov;
+  saveDayOverrides(dateKey, overrides);
+  persistOverridesForDate(dateKey);
+}
+
 
 // Helper: render a single activity card with full controls
 function renderActivityCard(act) {
