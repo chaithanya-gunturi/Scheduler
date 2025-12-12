@@ -707,7 +707,7 @@ function deleteRecurringOverrideItem(recurringId, itemIdx) {
   }
   overrides[recurringId] = ov;
   saveDayOverrides(dateKey, overrides);
-  autoSaveDay(); // persist to day file
+  autoSaveDay();
 }
 
 
@@ -921,6 +921,7 @@ function openSimpleInputModal(labelText, onSave) {
   input.focus();
 }
 
+
 // ----- Activities rendering -----
 function renderActivities(displayActivities) {
   const container = document.getElementById("activities");
@@ -957,10 +958,12 @@ function renderActivities(displayActivities) {
       openSimpleInputModal("Activity title:", (title) => {
         if (!title) return;
         currentActivities.push({
+          id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()),
           title,
           time: `${hourStr.padStart(2,"0")}:00`,
           items: [],
-          done: false
+          done: false,
+          isRecurring: false
         });
         autoSaveDay();
         renderActivities(buildDisplayActivities());
@@ -1057,7 +1060,6 @@ function renderActivities(displayActivities) {
 
       // Delete button logic
       if (!act.isRecurring) {
-        // one-off item delete
         const delItemBtn = document.createElement("button");
         delItemBtn.textContent = "🗑";
         delItemBtn.title = "Delete item";
@@ -1068,7 +1070,6 @@ function renderActivities(displayActivities) {
         };
         li.appendChild(delItemBtn);
       } else if (item._fromOverride) {
-        // recurring override item delete
         const delItemBtn = document.createElement("button");
         delItemBtn.textContent = "🗑";
         delItemBtn.title = "Delete override item";
@@ -1098,7 +1099,11 @@ function renderActivities(displayActivities) {
       const delBtn = document.createElement("button");
       delBtn.textContent = "🗑️ Delete";
       delBtn.onclick = () => {
-        const i = currentActivities.findIndex(a => a === act);
+        // Find by id if present, else by title+time
+        const i = currentActivities.findIndex(a =>
+          (a.id && act.id && a.id === act.id) ||
+          (!a.id && a.title === act.title && a.time === act.time)
+        );
         if (i !== -1) {
           currentActivities.splice(i, 1);
           autoSaveDay();
