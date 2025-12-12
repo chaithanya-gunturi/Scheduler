@@ -345,17 +345,15 @@ function appliesOnDate(tpl, dateKey) {
       return diff % interval === 0;
     }
     case "weekly": {
-      const targetDow = typeof rec.dayOfWeek === "number" ? rec.dayOfWeek : null;
-      if (targetDow == null) return false;
-      if (date.getDay() !== targetDow) return false;
+      const targetDays = rec.daysOfWeek ?? (rec.dayOfWeek != null ? [rec.dayOfWeek] : []);
+      if (!targetDays.includes(date.getDay())) return false;
       const anchor = start || date;
       const wdiff = weeksBetween(anchor, date);
       return wdiff % interval === 0;
     }
     case "monthly": {
-      const targetDom = typeof rec.dayOfMonth === "number" ? rec.dayOfMonth : null;
-      if (targetDom == null) return false;
-      if (date.getDate() !== targetDom) return false;
+      const targetDays = rec.daysOfMonth ?? (rec.dayOfMonth != null ? [rec.dayOfMonth] : []);
+      if (!targetDays.includes(date.getDate())) return false;
       const monthsDiff =
         (date.getFullYear() - (start ? start.getFullYear() : date.getFullYear())) * 12 +
         (date.getMonth() - (start ? start.getMonth() : date.getMonth()));
@@ -1925,35 +1923,55 @@ recCancel.onclick = () => {
   recModal.classList.remove("active");
 };
 recSave.onclick = async () => {
+  const title = recTitle.value.trim();
+  if (!title) { showPopup("Title is required."); return; }
+
+  const time = parseTimeStr(recTime.value);
+  const type = recType.value;
+  const interval = parseInt(recInterval.value, 10) || 1;
+
+  // Collect multiple selections from <select multiple>
+  const daysOfWeek = Array.from(recDow.selectedOptions).map(opt => parseInt(opt.value, 10));
+  const daysOfMonth = Array.from(recDom.selectedOptions).map(opt => parseInt(opt.value, 10));
+
+  // Build event object
   const ev = {
-    title: recTitle.value.trim(),
-    time: parseTimeStr(recTime.value),
-    type: recType.value,
-    interval: parseInt(recInterval.value, 10) || 1,
-    dayOfWeek: recDow.value !== "" ? parseInt(recDow.value, 10) : null,
-    dayOfMonth: recDom.value !== "" ? parseInt(recDom.value, 10) : null,
+    id: editingRecurringIndex != null
+      ? recurringEvents[editingRecurringIndex].id
+      : `rec_${Date.now()}`,
+    title,
+    time,
     items: recItems.value.split(",").map(s => s.trim()).filter(Boolean),
+    recurrence: {
+      type,
+      interval,
+      daysOfWeek: daysOfWeek.length ? daysOfWeek : undefined,
+      daysOfMonth: daysOfMonth.length ? daysOfMonth : undefined
+    },
     startDate: recStart.value || null,
-    endDate: recEnd.value || null   
+    endDate: recEnd.value || null
   };
 
-  if (!ev.title) { showPopup("Title is required."); return; }
-  if (ev.type === "weekly" && (ev.dayOfWeek == null || ev.dayOfWeek < 0 || ev.dayOfWeek > 6)) {
-    showPopup("For weekly events, set Day of week (0=Sun..6=Sat).");
+  // Validation
+  if (ev.recurrence.type === "weekly" && (!ev.recurrence.daysOfWeek || !ev.recurrence.daysOfWeek.length)) {
+    showPopup("For weekly events, select at least one day of week.");
     return;
   }
-  if (ev.type === "monthly" && (ev.dayOfMonth == null || ev.dayOfMonth < 1 || ev.dayOfMonth > 31)) {
-    showPopup("For monthly events, set Day of month (1–31).");
+  if (ev.recurrence.type === "monthly" && (!ev.recurrence.daysOfMonth || !ev.recurrence.daysOfMonth.length)) {
+    showPopup("For monthly events, select at least one day of month.");
     return;
   }
 
+  // Save or update
   if (editingRecurringIndex != null) {
     recurringEvents[editingRecurringIndex] = ev;
   } else {
     recurringEvents.push(ev);
   }
+
   await saveRecurring();
   recModal.classList.remove("active");
+
   if (currentDate) {
     renderActivities(buildDisplayActivities());
   }
@@ -2108,3 +2126,42 @@ function confirmDelete(message, onConfirm) {
   modal.appendChild(form);
   document.body.appendChild(modal);
 }
+
+// Default type = daily
+recType.value = "Daily";
+document.getElementById("dow-label").style.display = "none";
+document.getElementById("dom-label").style.display = "none";
+
+// Toggle visibility based on type
+recType.onchange = () => {
+  const type = recType.value;
+  if (type === "weekly") {
+    document.getElementById("dow-label").style.display = "block";
+    document.getElementById("dom-label").style.display = "none";
+  } else if (type === "monthly") {
+    document.getElementById("dow-label").style.display = "none";
+    document.getElementById("dom-label").style.display = "block";
+  } else {
+    document.getElementById("dow-label").style.display = "none";
+    document.getElementById("dom-label").style.display = "none";
+  }
+};
+
+addRecurringBtn.onclick = () => {
+  recTitle.value = "";
+  recTime.value = "";
+  recStart.value = "";
+  recEnd.value = "";
+  recType.value = "daily"; // force default
+  recInterval.value = "1";
+  recItems.value = "";
+  recDow.selectedIndex = -1;
+  recDom.selectedIndex = -1;
+  editingRecurringIndex = null;
+
+  // Hide day selectors
+  document.getElementById("dow-label").style.display = "none";
+  document.getElementById("dom-label").style.display = "none";
+
+  recModal.classList.add("active");
+};

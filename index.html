@@ -125,30 +125,85 @@
 
 
   <!-- Recurring modal -->
-  <div id="recurring-modal" class="modal">
-    <div class="modal-card">
-      <h3 id="recurring-modal-title">Add recurring event</h3>
-      <label class="label">Title <input type="text" id="rec-title" /></label>
-      <label class="label">Time <input type="time" id="rec-time" /></label>
-      <label class="label">Start date <input type="date" id="rec-start" /></label>
-      <label class="label">End date <input type="date" id="rec-end" /></label>
-      <label class="label">Type
-        <select id="rec-type">
-          <option value="daily">Daily</option>
-          <option value="weekly">Weekly</option>
-          <option value="monthly">Monthly</option>
-        </select>
-      </label>
-      <label class="label">Interval <input type="number" id="rec-interval" min="1" value="1" /></label>
-      <label class="label">Day of week <input type="number" id="rec-dow" min="0" max="6" /></label>
-      <label class="label">Day of month <input type="number" id="rec-dom" min="1" max="31" /></label>
-      <label class="label">Checklist items <input type="text" id="rec-items" /></label>
-      <div class="modal-actions">
-        <button id="rec-save">Save</button>
-        <button id="rec-cancel">Cancel</button>
-      </div>
+  <!-- Recurring modal -->
+<div id="recurring-modal" class="modal">
+  <div class="modal-card">
+    <h3 id="recurring-modal-title">Add recurring event</h3>
+    <label class="label">Title <input type="text" id="rec-title" /></label>
+    <label class="label">Time <input type="time" id="rec-time" /></label>
+    <label class="label">Start date <input type="date" id="rec-start" /></label>
+    <label class="label">End date <input type="date" id="rec-end" /></label>
+    <label class="label">Type
+      <select id="rec-type">
+        <option value="daily" selected>Daily</option>
+        <option value="weekly">Weekly</option>
+        <option value="monthly">Monthly</option>
+      </select>
+    </label>
+
+    <label class="label">Interval <input type="number" id="rec-interval" min="1" value="1" /></label>
+
+    <!-- Multi-select for weekdays -->
+    <label class="label" id="dow-label" style="display:none;">
+      Days of week
+      <select id="rec-dow" multiple size="7">
+        <option value="0">Sunday</option>
+        <option value="1">Monday</option>
+        <option value="2">Tuesday</option>
+        <option value="3">Wednesday</option>
+        <option value="4">Thursday</option>
+        <option value="5">Friday</option>
+        <option value="6">Saturday</option>
+      </select>
+    </label>
+
+
+    <!-- Multi-select for month days -->
+    <label class="label" id="dom-label" style="display:none;">
+      Days of month
+      <select id="rec-dom" multiple size="12">
+        <!-- 1–31 -->
+        <option value="1">1</option>
+        <option value="2">2</option>
+        <option value="3">3</option>
+        <option value="4">4</option>
+        <option value="5">5</option>
+        <option value="6">6</option>
+        <option value="7">7</option>
+        <option value="8">8</option>
+        <option value="9">9</option>
+        <option value="10">10</option>
+        <option value="11">11</option>
+        <option value="12">12</option>
+        <option value="13">13</option>
+        <option value="14">14</option>
+        <option value="15">15</option>
+        <option value="16">16</option>
+        <option value="17">17</option>
+        <option value="18">18</option>
+        <option value="19">19</option>
+        <option value="20">20</option>
+        <option value="21">21</option>
+        <option value="22">22</option>
+        <option value="23">23</option>
+        <option value="24">24</option>
+        <option value="25">25</option>
+        <option value="26">26</option>
+        <option value="27">27</option>
+        <option value="28">28</option>
+        <option value="29">29</option>
+        <option value="30">30</option>
+        <option value="31">31</option>
+      </select>
+    </label>
+
+    <label class="label">Checklist items <input type="text" id="rec-items" /></label>
+    <div class="modal-actions">
+      <button id="rec-save">Save</button>
+      <button id="rec-cancel">Cancel</button>
     </div>
   </div>
+</div>
 <footer id="status-bar">
   <span id="save-status"></span>
 </footer>
