@@ -2279,3 +2279,99 @@ deleteBtn.querySelector("button").onclick = async () => {
   if (currentDate) renderActivities(buildDisplayActivities());
 };
 actions.appendChild(deleteBtn);
+
+
+function openEditModal(act, onSave) {
+  const modal = document.createElement("div");
+  modal.className = "edit-modal";
+
+  const form = document.createElement("div");
+  form.className = "edit-form";
+
+  // Title
+  const titleLabel = document.createElement("label");
+  titleLabel.textContent = "Title:";
+  const titleInput = document.createElement("input");
+  titleInput.type = "text";
+  titleInput.value = act.title || "";
+  titleLabel.appendChild(titleInput);
+
+  // Time
+  const timeLabel = document.createElement("label");
+  timeLabel.textContent = "Time:";
+  const timeInput = document.createElement("input");
+  timeInput.type = "time";
+  timeInput.value = act.time || "";
+  timeLabel.appendChild(timeInput);
+
+  // Date
+  const dateLabel = document.createElement("label");
+  dateLabel.textContent = "Date:";
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.value = currentDateKey(); // prefill with current day
+  dateLabel.appendChild(dateInput);
+
+  // Save
+  const saveBtn = document.createElement("button");
+  saveBtn.textContent = "Save";
+  saveBtn.onclick = async () => {
+    const newTitle = titleInput.value.trim();
+    if (!newTitle) { showPopup("Title is required."); return; }
+
+    const newTime = parseTimeStr(timeInput.value);
+    const newDateStr = dateInput.value;
+    const newDate = new Date(newDateStr);
+
+    act.title = newTitle;
+    act.time = newTime;
+
+    const oldDateKey = currentDateKey();
+    const newDateKeyStr = currentDateKey(newDate);
+
+    if (newDateKeyStr !== oldDateKey) {
+      // ✅ Remove from current day's activities
+      currentActivities = currentActivities.filter(a => a !== act);
+
+      // Save current day file without the moved activity
+      await writeDayFile(currentFileHandle, currentActivities);
+
+      // Load target day file
+      const targetHandle = await getDayFileHandle(newDate);
+      const text = await readDayFile(targetHandle);
+      let targetActivities = parseActivities(text);
+
+      // Add activity to target day
+      targetActivities.push(act);
+
+      // Save target day file
+      await writeDayFile(targetHandle, targetActivities);
+
+      showPopup("Activity moved to new date!");
+      renderActivities(buildDisplayActivities());
+      renderCalendar(currentDate.getFullYear(), currentDate.getMonth());
+    } else {
+      // Same date, just save normally
+      autoSaveDay();
+      if (onSave) onSave();
+    }
+
+    document.body.removeChild(modal);
+  };
+
+  // Cancel
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = "Cancel";
+  cancelBtn.onclick = () => document.body.removeChild(modal);
+
+  form.appendChild(titleLabel);
+  form.appendChild(timeLabel);
+  form.appendChild(dateLabel);
+  form.appendChild(saveBtn);
+  form.appendChild(cancelBtn);
+
+  modal.appendChild(form);
+  document.body.appendChild(modal);
+
+  titleInput.focus();
+}
