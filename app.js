@@ -225,7 +225,15 @@ function parseActivities(text) {
         time = parts[0].trim();
         title = parts.slice(1).join("|").trim();
       }
-      current = { title, time, items: [], done, isRecurring: false };
+      // ✅ Assign a stable id to every one-off activity
+      current = {
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()),
+        title,
+        time,
+        items: [],
+        done,
+        isRecurring: false
+      };
       currentOverride = null;
       continue;
     }
@@ -925,7 +933,7 @@ function renderActivities(displayActivities) {
   const container = document.getElementById("activities");
   container.innerHTML = "";
 
-  // Sort by time; untimed last
+  // Sort by time; untimed last (but we'll render untimed after timed blocks)
   displayActivities.sort((a, b) => {
     if (!a.time && !b.time) return 0;
     if (!a.time) return 1;
@@ -933,217 +941,203 @@ function renderActivities(displayActivities) {
     return a.time.localeCompare(b.time);
   });
 
-  const hourBlocks = new Map();
-  let noTimeBlockEl = null;
+  const timed = displayActivities.filter(a => a.time);
+  const untimed = displayActivities.filter(a => !a.time);
 
+  // Create or reuse hour blocks for timed activities
+  const hourBlocks = new Map();
   function ensureHourBlock(hourStr) {
     if (hourBlocks.has(hourStr)) return hourBlocks.get(hourStr);
-
     const block = document.createElement("div");
     block.className = "hour-block";
-
-    const headerRow = document.createElement("div");
-    headerRow.className = "hour-header-row";
-
-    const label = document.createElement("h3");
-    label.textContent = `${hourStr}:00`;
-
-    const addBtn = document.createElement("button");
-    addBtn.textContent = "➕";
-    addBtn.className = "add-hour-btn";
-    addBtn.title = "Add activity at this hour";
-    addBtn.onclick = () => {
-      openSimpleInputModal("Activity title:", (title) => {
-        if (!title) return;
-        currentActivities.push({
-          id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()),
-          title,
-          time: `${hourStr.padStart(2,"0")}:00`,
-          items: [],
-          done: false,
-          isRecurring: false
-        });
-        autoSaveDay();
-        renderActivities(buildDisplayActivities());
-      });
-    };
-
-    headerRow.appendChild(label);
-    headerRow.appendChild(addBtn);
-    block.appendChild(headerRow);
-    container.appendChild(block);
-
+    block.innerHTML = `<h3>${hourStr}:00</h3>`;
     hourBlocks.set(hourStr, block);
+    container.appendChild(block);
     return block;
   }
 
-  function ensureNoTimeBlock() {
-    if (noTimeBlockEl) return noTimeBlockEl;
-    noTimeBlockEl = document.createElement("div");
-    noTimeBlockEl.className = "hour-block no-time";
-    const label = document.createElement("h3");
-    label.textContent = "No Time";
-    noTimeBlockEl.appendChild(label);
-    container.appendChild(noTimeBlockEl);
-    return noTimeBlockEl;
-  }
-
-  displayActivities.forEach(act => {
+  // Render one activity card into a given block
+  function appendActivityCard(act, block) {
     const activityDiv = document.createElement("div");
     activityDiv.className = "activity " + (act.isRecurring ? "recurring" : "oneoff");
-    if (act.done) activityDiv.classList.add("done");
+    if (act.done) activityDiv.classList.add("activity-done"); // visual highlight when complete
 
+    // Header
     const header = document.createElement("div");
     header.className = "activity-header";
 
-    const activityCb = document.createElement("input");
-    activityCb.type = "checkbox";
-    activityCb.checked = !!act.done;
-    activityCb.title = "Mark activity as done";
-    activityCb.onchange = () => {
+    // Activity-level done checkbox
+    const doneCb = document.createElement("input");
+    doneCb.type = "checkbox";
+    doneCb.checked = !!act.done;
+    doneCb.title = "Mark activity complete";
+    doneCb.onchange = () => {
       if (act.isRecurring) {
-        toggleRecurringDoneForDay(act.id, activityCb.checked);
+        const dateKey = currentDateKey();
+        const overrides = getDayOverrides(dateKey) || {};
+        if (!overrides[act.id]) overrides[act.id] = { done: false, itemOverrides: [], itemState: {} };
+        overrides[act.id].done = doneCb.checked;
+        saveDayOverrides(dateKey, overrides);
       } else {
-        act.done = activityCb.checked;
-        if (act.done) (act.items || []).forEach(i => i.done = true);
-        autoSaveDay();
+        const idx = currentActivities.findIndex(a => a.id === act.id);
+        if (idx !== -1) {
+          currentActivities[idx].done = doneCb.checked;
+          currentActivities[idx].items.forEach(it => (it.done = doneCb.checked));
+        }
       }
+      autoSaveDay();
       renderActivities(buildDisplayActivities());
     };
-    header.appendChild(activityCb);
 
     const timeEl = document.createElement("span");
     timeEl.className = "activity-time";
     timeEl.textContent = act.time || "";
-    header.appendChild(timeEl);
 
     const titleEl = document.createElement("span");
     titleEl.className = "activity-title";
-    titleEl.innerHTML = renderTextWithLinks(act.title);
+    titleEl.textContent = act.title;
+
+    header.appendChild(doneCb);
+    header.appendChild(timeEl);
     header.appendChild(titleEl);
 
     if (act.isRecurring) {
-      const recurringLabel = document.createElement("span");
-      recurringLabel.className = "recurring-label";
-      recurringLabel.textContent = "🔁 Recurring";
-      header.appendChild(recurringLabel);
+      const recLabel = document.createElement("span");
+      recLabel.className = "recurring-label";
+      recLabel.textContent = "(Recurring)";
+      header.appendChild(recLabel);
     }
 
     activityDiv.appendChild(header);
 
-    // Checklist
+    // Checklist: bullet → checkbox → text, with tight spacing
     const checklist = document.createElement("ul");
-    (act.items || []).forEach((item, itemIdx) => {
+    checklist.className = "checklist";
+    (act.items || []).forEach((item) => {
       const li = document.createElement("li");
+      li.className = "checklist-item";
 
       const cb = document.createElement("input");
       cb.type = "checkbox";
       cb.checked = !!item.done;
       cb.onchange = () => {
-        if (act.isRecurring && item._fromTpl) {
-          setRecurringItemDoneForDay(act.id, item._key, cb.checked);
-        } else if (act.isRecurring && item._fromOverride) {
-          updateRecurringOverrideItem(act.id, itemIdx, cb.checked);
+        if (act.isRecurring) {
+          const dateKey = currentDateKey();
+          const overrides = getDayOverrides(dateKey) || {};
+          if (!overrides[act.id]) overrides[act.id] = { done: false, itemOverrides: [], itemState: {} };
+          if (item._fromTpl) {
+            overrides[act.id].itemState[item._key] = cb.checked;
+          } else if (item._fromOverride) {
+            overrides[act.id].itemOverrides[item._overrideIdx].done = cb.checked;
+          }
+          saveDayOverrides(dateKey, overrides);
         } else {
           item.done = cb.checked;
-          autoSaveDay();
         }
-        renderActivities(buildDisplayActivities());
+        autoSaveDay();
       };
+
+      const textNode = document.createElement("span");
+      textNode.textContent = item.text;
+      if (item.done) textNode.classList.add("item-done");
+
       li.appendChild(cb);
+      li.appendChild(textNode);
 
-      const span = document.createElement("span");
-      span.innerHTML = " " + renderTextWithLinks(item.text);
-      li.appendChild(span);
-
-      // Delete button logic
-      if (!act.isRecurring) {
-        const delItemBtn = document.createElement("button");
-        delItemBtn.textContent = "🗑";
-        delItemBtn.title = "Delete item";
-        delItemBtn.onclick = () => {
-          act.items.splice(itemIdx, 1);
-          autoSaveDay();
+      // Allow deleting only override items for recurring
+      if (item._fromOverride) {
+        const delBtn = document.createElement("button");
+        delBtn.textContent = "✖";
+        delBtn.onclick = () => {
+          deleteRecurringOverrideItem(act.id, item._overrideIdx);
           renderActivities(buildDisplayActivities());
         };
-        li.appendChild(delItemBtn);
-      } else if (item._fromOverride) {
-        const delItemBtn = document.createElement("button");
-        delItemBtn.textContent = "🗑";
-        delItemBtn.title = "Delete override item";
-        delItemBtn.onclick = () => {
-          deleteRecurringOverrideItem(act.id, itemIdx);
-          renderActivities(buildDisplayActivities());
-        };
-        li.appendChild(delItemBtn);
+        li.appendChild(delBtn);
       }
 
       checklist.appendChild(li);
     });
     activityDiv.appendChild(checklist);
 
-    // Controls
+    // Actions
+    const actions = document.createElement("div");
+    actions.className = "activity-actions";
+
     if (!act.isRecurring) {
       const editBtn = document.createElement("button");
-      editBtn.textContent = "✏️ Edit";
+      editBtn.textContent = "✎ Edit";
       editBtn.onclick = () => {
-        openEditModal(act, () => {
+        openEditModal(act.id, () => {
           autoSaveDay();
           renderActivities(buildDisplayActivities());
         });
       };
-      activityDiv.appendChild(editBtn);
+      actions.appendChild(editBtn);
 
       const delBtn = document.createElement("button");
-      delBtn.textContent = "🗑️ Delete";
+      delBtn.textContent = "🗑 Delete";
       delBtn.onclick = () => {
-        // Find by id if present, else by title+time
-        const i = currentActivities.findIndex(a =>
-          (a.id && act.id && a.id === act.id) ||
-          (!a.id && a.title === act.title && a.time === act.time)
-        );
-        if (i !== -1) {
-          currentActivities.splice(i, 1);
+        const idx = currentActivities.findIndex(a => a.id === act.id);
+        if (idx !== -1) {
+          currentActivities.splice(idx, 1);
           autoSaveDay();
           renderActivities(buildDisplayActivities());
         }
       };
-      activityDiv.appendChild(delBtn);
+      actions.appendChild(delBtn);
 
       const addItemBtn = document.createElement("button");
       addItemBtn.textContent = "➕ Add Item";
       addItemBtn.onclick = () => {
-        openSimpleInputModal("New checklist item:", (val) => {
-          if (!val) return;
-          act.items.push({ text: val.trim(), done: false });
-          autoSaveDay();
-          renderActivities(buildDisplayActivities());
+        openSimpleInputModal("New checklist item", (newItem) => {
+          const idx = currentActivities.findIndex(a => a.id === act.id);
+          if (idx !== -1) {
+            currentActivities[idx].items.push({ text: newItem, done: false });
+            autoSaveDay();
+            renderActivities(buildDisplayActivities());
+          }
         });
       };
-      activityDiv.appendChild(addItemBtn);
+      actions.appendChild(addItemBtn);
     } else {
       const addItemBtn = document.createElement("button");
       addItemBtn.textContent = "➕ Add Item (today)";
       addItemBtn.onclick = () => {
-        openSimpleInputModal("New checklist item:", (val) => {
-          if (!val) return;
-          addItemToRecurringInstance(act.id, val.trim());
+        openSimpleInputModal("Add override item", (newItem) => {
+          const dateKey = currentDateKey();
+          const overrides = getDayOverrides(dateKey) || {};
+          if (!overrides[act.id]) overrides[act.id] = { done: false, itemOverrides: [], itemState: {} };
+          overrides[act.id].itemOverrides.push({ text: newItem, done: false });
+          saveDayOverrides(dateKey, overrides);
           renderActivities(buildDisplayActivities());
+          autoSaveDay();
         });
       };
-      activityDiv.appendChild(addItemBtn);
+      actions.appendChild(addItemBtn);
     }
 
-    // Append to correct block
-    if (act.time) {
-      const hour = act.time.split(":")[0];
-      const block = ensureHourBlock(hour);
-      block.appendChild(activityDiv);
-    } else {
-      const block = ensureNoTimeBlock();
-      block.appendChild(activityDiv);
-    }
+    activityDiv.appendChild(actions);
+    block.appendChild(activityDiv);
+  }
+
+  // Render timed activities by hour blocks
+  timed.forEach(act => {
+    const hourStr = act.time.slice(0, 2);
+    const block = ensureHourBlock(hourStr);
+    appendActivityCard(act, block);
   });
+
+  // Untimed section at the bottom, only if present
+  if (untimed.length > 0) {
+    const noTimeBlock = document.createElement("div");
+    noTimeBlock.className = "hour-block no-time";
+    noTimeBlock.innerHTML = "<h3>Untimed</h3>";
+    container.appendChild(noTimeBlock);
+
+    untimed.forEach(act => {
+      appendActivityCard(act, noTimeBlock);
+    });
+  }
 }
 
 async function persistOverridesForDate(dateKey) {
@@ -1744,7 +1738,14 @@ addActivityBtn.onclick = () => {
     const items = itemsInput.value.split(",").map(s => s.trim()).filter(Boolean)
       .map(t => ({ text: t, done: false }));
 
-    currentActivities.push({ title, time, items });
+    currentActivities.push({
+        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()),
+        title,
+        time,
+        items,
+        done: false,
+        isRecurring: false
+      });
     autoSaveDay();
     renderActivities(buildDisplayActivities());
     document.body.removeChild(modal);
@@ -2281,7 +2282,11 @@ deleteBtn.querySelector("button").onclick = async () => {
 actions.appendChild(deleteBtn);
 
 
-function openEditModal(act, onSave) {
+function openEditModal(activityId, onSave) {
+  const srcIdx = currentActivities.findIndex(a => a.id === activityId);
+  const src = srcIdx !== -1 ? currentActivities[srcIdx] : null;
+  if (!src) { showPopup("Couldn’t locate activity."); return; }
+
   const modal = document.createElement("div");
   modal.className = "edit-modal";
 
@@ -2293,7 +2298,7 @@ function openEditModal(act, onSave) {
   titleLabel.textContent = "Title:";
   const titleInput = document.createElement("input");
   titleInput.type = "text";
-  titleInput.value = act.title || "";
+  titleInput.value = src.title || "";
   titleLabel.appendChild(titleInput);
 
   // Time
@@ -2301,7 +2306,7 @@ function openEditModal(act, onSave) {
   timeLabel.textContent = "Time:";
   const timeInput = document.createElement("input");
   timeInput.type = "time";
-  timeInput.value = act.time || "";
+  timeInput.value = src.time || "";
   timeLabel.appendChild(timeInput);
 
   // Date
@@ -2309,7 +2314,7 @@ function openEditModal(act, onSave) {
   dateLabel.textContent = "Date:";
   const dateInput = document.createElement("input");
   dateInput.type = "date";
-  dateInput.value = currentDateKey(); // prefill with current day
+  dateInput.value = currentDateKey();
   dateLabel.appendChild(dateInput);
 
   // Save
@@ -2323,37 +2328,37 @@ function openEditModal(act, onSave) {
     const newDateStr = dateInput.value;
     const newDate = new Date(newDateStr);
 
-    act.title = newTitle;
-    act.time = newTime;
-
     const oldDateKey = currentDateKey();
     const newDateKeyStr = currentDateKey(newDate);
 
     if (newDateKeyStr !== oldDateKey) {
-      // ✅ Remove from current day's activities
-      currentActivities = currentActivities.filter(a => a !== act);
-
-      // Save current day file without the moved activity
+      // Remove from current day
+      currentActivities.splice(srcIdx, 1);
       await writeDayFile(currentFileHandle, currentActivities);
 
-      // Load target day file
+      // Load target day
       const targetHandle = await getDayFileHandle(newDate);
       const text = await readDayFile(targetHandle);
-      let targetActivities = parseActivities(text);
+      const targetActivities = parseActivities(text);
 
-      // Add activity to target day
-      targetActivities.push(act);
+      // Update fields and add to target
+      src.title = newTitle;
+      src.time = newTime;
+      targetActivities.push(src);
 
-      // Save target day file
       await writeDayFile(targetHandle, targetActivities);
 
       showPopup("Activity moved to new date!");
-      renderActivities(buildDisplayActivities());
-      renderCalendar(currentDate.getFullYear(), currentDate.getMonth());
+      currentDate = newDate;
+      await openDay(newDate);
+      renderCalendar(newDate.getFullYear(), newDate.getMonth());
     } else {
-      // Same date, just save normally
+      // Same day edit
+      src.title = newTitle;
+      src.time = newTime;
       autoSaveDay();
       if (onSave) onSave();
+      renderActivities(buildDisplayActivities());
     }
 
     document.body.removeChild(modal);

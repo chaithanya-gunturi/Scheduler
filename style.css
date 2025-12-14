@@ -781,3 +781,108 @@ justify-content: center;
   font-size: 0.9em;
   padding: 2px 6px;
 }
+
+.activity {
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 10px;
+  margin: 8px 0;
+  background-color: #f9f9f9;
+  transition: background-color 0.3s ease;
+}
+
+.activity-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: bold;
+  font-size: 16px;
+  margin-bottom: 6px;
+}
+
+.activity-time {
+  color: #555;
+  font-weight: bold;
+}
+
+.activity-title {
+  flex-grow: 1;
+}
+
+.activity-done {
+  background-color: #e0ffe0;
+  opacity: 0.7;
+}
+
+.checklist {
+  list-style-type: disc;
+  padding-left: 20px;
+  margin: 6px 0;
+}
+
+.checklist-item {
+  margin: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.checklist-item input[type="checkbox"] {
+  margin-right: 6px;
+}
+
+.item-done {
+  text-decoration: line-through;
+  color: #666;
+}
+
+.activity-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+
+.activity-actions button {
+  padding: 4px 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.checklist {
+  list-style-type: disc;
+  padding-left: 20px;
+  margin: 6px 0;
+}
+
+.checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.95em; /* match activity title */
+  margin: 2px 0; /* tighter spacing */
+}
+
+.checklist-item::before {
+  content: "•";
+  margin-right: 6px;
+  color: #555;
+}
+
+.checklist-item input[type="checkbox"] {
+  margin: 0;
+}
+
+.checklist-item span {
+  margin-left: 2px;
+}
+
+.item-done {
+  text-decoration: line-through;
+  color: #666;
+}
+
+.activity-done .activity-title,
+.activity-done .checklist-item span {
+  text-decoration: line-through;
+  color: #666;
+}
